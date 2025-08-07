@@ -5,6 +5,12 @@ from pinecone import Pinecone
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 import requests
+from langchain_core.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langchain.chains.router.llm_router import LLMRouterChain
+from pydantic import BaseModel, Field
+from langchain.tools import StructuredTool
+from typing import Optional
 
 load_dotenv()
 # Initialize OpenAI client
@@ -16,6 +22,14 @@ pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 # Connect to the index
 index = pc.Index("socalabg")
 
+# Handle flexible parameters for ticketmaster api
+# class ticketMasterSearchInput(BaseModel):
+#     intent: Optional[str] = Field(description="The intent of the user's query")
+#     genre: Optional[str] = Field(description="The genre of music the user is looking for")
+#     location: Optional[str] = Field(description="The location of the user")
+#     date: Optional[str] = Field(description="The date of the event")
+#     price: Optional[str] = Field(description="The price of the event")
+# embedd user query
 def get_embedding(text: str, model="text-embedding-ada-002"):
     """Get embedding for text using OpenAI API."""
     try:
@@ -28,6 +42,7 @@ def get_embedding(text: str, model="text-embedding-ada-002"):
         print(f"Error getting embedding: {str(e)}")
         return None
 
+# search for songs using vector similarity
 def search_songs(query: str, top_k: int = 5):
     """Search for songs using vector similarity."""
     try:
@@ -49,24 +64,34 @@ def search_songs(query: str, top_k: int = 5):
     except Exception as e:
         print(f"Error searching songs: {str(e)}")
 
+# recommend a song based on the user's query
 def recommend_song(query: str) -> str:
     return search_songs(query)
 
+# search for events using TicketMaster API
 def ticketmaster_search_event(query: str) -> str:
+
+    # Get the flexible parameters
+    genre = input.genre
+    location = input.location
+    date = input.date
+    price = input.price
+    # get user intent or else default to stereotypical niches
+    genres = genre if genre else  ["EDM", "House", "Techno", "Trance", "Dubstep", "Festival", "Rave", "KPop", "JPop", "Korean", "R&B"]
+    
     # Your code to call TicketMaster API and return event info
     url = "https://app.ticketmaster.com/discovery/v2/events.json"
     edm_keywords = ['EDM', 'house', 'techno', 'trance', 'dubstep', 'festival', 'rave']
-
-    edm_venues =['Insomniac ']
 
     optimal_edm_params = {
         'apikey': os.getenv("TICKETMASTER_API_KEY"),
         "dmaId": "324,381,382,374,385",
         "preferredCountry": ["US"],
+        "preferredState": ["CA"],
         "locale": "*",
         "sort": "relevance,desc",
         "size": "5",
-        "classificationName": ["EDM", "House", "Techno", "Trance", "Dubstep", "Festival", "Rave", "KPop", "JPop", "Korean", "R&B"],
+        "classificationName": genres,
     }
 
     try:
@@ -124,6 +149,47 @@ def ticketmaster_search_event(query: str) -> str:
         print(f"Error searching events: {str(e)}")
         return None
 
+# search for food using Yelp API (TBD)
+def yelp_search_food(query: str) -> str:
+    url = "https://api.yelp.com/v3/businesses/search"
+    headers = {
+        "Authorization": f"Bearer {os.getenv('YELP_API_KEY')}"
+    }
+    params = {
+        "term": query,
+        "location": "Los Angeles, CA",
+        "radius": 10000,
+        "limit": 5,
+        "sort_by": "rating",
+        "categories": "korean,Viet,pocha,bbq,hotpot,matcha,boba,karaoke"
+    }
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        return response.json()
+    except Exception as e:
+        print(f"Error searching food: {str(e)}")
+        return None
+
+# get weather using OpenWeatherMap API
+def get_weather(query: str) -> str:
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "lat": "37.7749",
+        "long": "-122.4194",
+        "q": query,
+        "appid": os.getenv("OPENWEATHERMAP_API_KEY"),
+        "units": "imperial"
+    }
+    try:
+        response = requests.get(url, params=params)
+        return response.json()
+    except Exception as e:
+        print(f"Error getting weather: {str(e)}")
+        return None
+# final answer tool (fallback)
+def final_answer(query: str) -> str:
+    return "Output whatever you have as a thought or observation"
+    
 # Wrap functions as LangChain Tools
 song_tool = Tool(
     name="getSongRecommendation",
@@ -134,5 +200,23 @@ song_tool = Tool(
 ticketmaster_tool = Tool(
     name="TicketMasterSearch",
     func=ticketmaster_search_event,
-    description="Find the best EDM, House, Electronic, Techno, and Trance events with the most well known artists"
+    description="Find the best EDM, House, Electronic, Techno, Trance, and Dubstep events with the most well known artists",
+)
+
+yelp_tool = Tool(
+    name="FoodRecommendation",
+    func=yelp_search_food,
+    description="Find the best Pocha, Korean BBQ, Hotpot, Matcha, Boba, Karaoke, and other food options in users location"
+)
+
+get_weather_tool = Tool(
+    name="GetWeather",
+    func=get_weather,
+    description="Get the weather for the user (In Farenheit) "
+)
+
+final_answer_tool = Tool(
+    name="FinalAnswer",
+    func=final_answer,
+    description="Provide a final answer to the user's query"
 )

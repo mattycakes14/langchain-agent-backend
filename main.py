@@ -27,6 +27,7 @@ def health_check():
 def handle_prompt(request: PromptRequest):
     user_query = request.prompt
     user_id = request.user_id
+
     return run_agent(user_query)
 
 

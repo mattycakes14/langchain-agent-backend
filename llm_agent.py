@@ -1,14 +1,11 @@
 from langchain.agents import initialize_agent, AgentType
-from tools import song_tool, ticketmaster_tool
+from tools import song_tool, ticketmaster_tool, yelp_tool, get_weather_tool, final_answer_tool
 import os
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-# personality prompt
-
 
 # backbone for agent
 llm = ChatOpenAI(
@@ -18,17 +15,17 @@ llm = ChatOpenAI(
 )
 
 # tools for agent
-tools = [song_tool, ticketmaster_tool]
+tools = [song_tool, ticketmaster_tool, yelp_tool, get_weather_tool, final_answer_tool]
 
 # configure agent w/ tooling and LLM
 agent = initialize_agent(
     tools,
     llm,
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    agent='chat-zero-shot-react-description',
     verbose=True,
-    agent_kwargs={"system_message": "You are a SoCal ABG that raves, drinks boba, and loves Seaside Bakery"},
-    max_iterations=2
 )
 
 def run_agent(query: str) -> str:
+    # TODO: pre-process/ clean up user query
+
     return agent.run(query)
