@@ -16,41 +16,6 @@ pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 # Connect to the index
 index = pc.Index("socalabg")
 
-def get_embedding(text: str, model="text-embedding-ada-002"):
-    """Get embedding for text using OpenAI API."""
-    try:
-        response = openai.embeddings.create(
-            input=text,
-            model=model
-        )
-        return response.data[0].embedding
-    except Exception as e:
-        print(f"Error getting embedding: {str(e)}")
-        return None
-
-def search_songs(query: str, top_k: int = 5):
-    """Search for songs using vector similarity."""
-    try:
-        # Get embedding for the query
-        print(f"Getting embedding for query: '{query}'")
-        query_embedding = get_embedding(query)
-        
-        if query_embedding is None:
-            print("Failed to get embedding for query")
-            return
-        
-        results = index.query(
-            vector=query_embedding,
-            top_k=top_k,
-            include_metadata=True
-        )
-        return results["matches"][0].metadata
-            
-    except Exception as e:
-        print(f"Error searching songs: {str(e)}")
-
-def recommend_song(query: str) -> str:
-    return search_songs(query)
 
 def ticketmaster_search_event(query: str) -> str:
     # Your code to call TicketMaster API and return event info
@@ -66,7 +31,7 @@ def ticketmaster_search_event(query: str) -> str:
         "locale": "*",
         "sort": "relevance,desc",
         "size": "5",
-        "classificationName": ["EDM", "House", "Techno", "Trance", "Dubstep", "Festival", "Rave", "KPop", "JPop", "Korean", "R&B"],
+        "classificationName": ["EDM", "House", "Techno", "Trance", "Dubstep", "Festival", "Rave"],
     }
 
     try:
@@ -124,15 +89,5 @@ def ticketmaster_search_event(query: str) -> str:
         print(f"Error searching events: {str(e)}")
         return None
 
-# Wrap functions as LangChain Tools
-song_tool = Tool(
-    name="getSongRecommendation",
-    func=recommend_song,
-    description="Provide a song recommendation based on a user's request."
-)
-
-ticketmaster_tool = Tool(
-    name="TicketMasterSearch",
-    func=ticketmaster_search_event,
-    description="Find the best EDM, House, Electronic, Techno, and Trance events with the most well known artists"
-)
+res = ticketmaster_search_event("EDM")
+print(res)
