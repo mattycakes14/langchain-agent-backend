@@ -37,10 +37,6 @@ def search_songs(query: str, top_k: int = 5):
             print("Failed to get embedding for query")
             return
         
-        print(f"Query embedding dimension: {len(query_embedding)}")
-        
-        # Search the index
-        print(f"Searching for top {top_k} similar songs...")
         results = index.query(
             vector=query_embedding,
             top_k=top_k,
@@ -59,31 +55,11 @@ def search_songs(query: str, top_k: int = 5):
         print(f"Error searching songs: {str(e)}")
 
 if __name__ == "__main__":
-    # Test queries
-    test_queries = [
-        "happy upbeat music",
-        "sad emotional songs", 
-        "rock music with guitar",
-        "electronic dance music",
-        "acoustic folk songs"
-    ]
-    
-    print("🎵 Pinecone Vector Search Test")
-    print("=" * 40)
-    
     # Test with a specific query
-    user_query = input("Enter your search query (or press Enter for default): ").strip()
+    user_query = input("Enter your search query: ").strip()
     
     if not user_query:
         user_query = "happy upbeat music"
         print(f"Using default query: '{user_query}'")
     
     search_songs(user_query, top_k=5)
-    
-    print("\n" + "=" * 50)
-    print("Testing with predefined queries:")
-    
-    for query in test_queries:
-        print(f"\n🔍 Searching for: '{query}'")
-        search_songs(query, top_k=3)
-        print("-" * 30)
