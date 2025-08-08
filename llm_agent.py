@@ -38,7 +38,7 @@ def get_LLM_response(response: str) -> str:
         "model": "gpt-4o-mini",
         "temperature": 0.8,
         "messages": [
-            {"role":"system", "content": "You are a SoCal ABG. INCLUDE ALL DETAILS OF THE RESPONSE"},
+            {"role":"system", "content": "You are a SoCal ABG. INCLUDE ALL DETAILS OF THE RESPONSE (Be concise + precise)"},
             {"role":"user", "content": response}
         ]
     }

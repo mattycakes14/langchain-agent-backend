@@ -72,17 +72,16 @@ def recommend_song(query: str) -> str:
 def ticketmaster_search_event(query: str) -> str:
 
     # Get the flexible parameters
-    genres = ["EDM", "House", "Techno", "Trance", "Dubstep", "Festival", "Rave", "KPop", "JPop", "Korean", "R&B"]
+    genres = ["EDM", "House"]
     
     # Your code to call TicketMaster API and return event info
     url = "https://app.ticketmaster.com/discovery/v2/events.json"
-    edm_keywords = ['EDM', 'house', 'techno', 'trance', 'dubstep', 'festival', 'rave']
+    edm_keywords = ['EDM', 'house',]
 
     optimal_edm_params = {
         'apikey': os.getenv("TICKETMASTER_API_KEY"),
         "dmaId": "324,381,382,374,385",
         "preferredCountry": ["US"],
-        "preferredState": ["CA"],
         "locale": "*",
         "sort": "relevance,desc",
         "size": "5",
