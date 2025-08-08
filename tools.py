@@ -72,12 +72,7 @@ def recommend_song(query: str) -> str:
 def ticketmaster_search_event(query: str) -> str:
 
     # Get the flexible parameters
-    genre = input.genre
-    location = input.location
-    date = input.date
-    price = input.price
-    # get user intent or else default to stereotypical niches
-    genres = genre if genre else  ["EDM", "House", "Techno", "Trance", "Dubstep", "Festival", "Rave", "KPop", "JPop", "Korean", "R&B"]
+    genres = ["EDM", "House", "Techno", "Trance", "Dubstep", "Festival", "Rave", "KPop", "JPop", "Korean", "R&B"]
     
     # Your code to call TicketMaster API and return event info
     url = "https://app.ticketmaster.com/discovery/v2/events.json"
@@ -194,7 +189,7 @@ def final_answer(query: str) -> str:
 song_tool = Tool(
     name="getSongRecommendation",
     func=recommend_song,
-    description="Provide a song recommendation based on a user's request."
+    description="Provide a song recommendation"
 )
 
 ticketmaster_tool = Tool(
