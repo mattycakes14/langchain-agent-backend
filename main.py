@@ -4,7 +4,8 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import os
 import requests
-from llm_agent import run_agent
+from llm_agent import compiled_graph
+from langchain_core.messages import HumanMessage
 load_dotenv()
 
 # initialize FastAPI app
@@ -38,7 +39,8 @@ def handle_prompt(request: PromptRequest):
     user_query = request.prompt
     user_id = request.user_id
 
-    return run_agent(user_query)
+    result = compiled_graph.invoke({"messages": [HumanMessage(content=user_query)]})
+    return result
 
 
 
