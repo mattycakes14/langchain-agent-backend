@@ -6,6 +6,7 @@ import os
 import requests
 from llm_agent import compiled_graph
 from langchain_core.messages import HumanMessage
+import logging
 load_dotenv()
 
 # initialize FastAPI app
@@ -40,6 +41,7 @@ def handle_prompt(request: PromptRequest):
     user_id = request.user_id
 
     result = compiled_graph.invoke({"messages": [HumanMessage(content=user_query)]})
+    logging.info("[FINAL RESULT]: " + str(result))
     return result
 
 

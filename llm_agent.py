@@ -13,8 +13,23 @@ from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
 import openai
 from pinecone import Pinecone
+from typing import Optional, List
+
+# Configure logging with more detail
+logging.basicConfig(
+    level=logging.DEBUG,  # Set to DEBUG for more verbose output
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('app.log')  # Also save to file
+    ]
+)
+
+# Create a logger for your specific module
+logger = logging.getLogger(__name__)
 
 load_dotenv()
+
 # openrouter api key
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -32,7 +47,8 @@ index = pc.Index("socalabg")
 class State(TypedDict):
     messages: Annotated[list, add_messages]
     message_type: str | None
-    result: dict | None  # Add this new key for custom JSON results
+    result: dict | None
+    extracted_params: dict | None  # Add this back
 
 # Classify user query
 class MessageClassifier(BaseModel):
@@ -40,28 +56,88 @@ class MessageClassifier(BaseModel):
         description="The type of message the user is sending")
 
 
-llm = init_chat_model(
+llm_main = init_chat_model(
     model="gpt-4o-mini",
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY
 )
 
+llm_fast = init_chat_model(
+    model="gpt-4.1-nano",
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY
+)
+
+# Define structured output for parameter extraction (API call query parameters)
+class ExtractedParams(BaseModel):
+    lat: Optional[float] = Field(description="Extracted latitude from the query", default=None)
+    lon: Optional[float] = Field(description="Extracted longitude from the query", default=None)
+    genres: Optional[List[str]] = Field(description="Extracted genres from the query", default=None)
+    postal_code: Optional[str] = Field(description="Extracted postal code from the query", default=None)
+
+# Extract paramters from user query in a format to be used in API calls
+# Parameters:
+# query: str - The user query
+# message_type: str - The type of message the user is sending
+# Returns:
+# dict - The extracted parameters
+def extract_parameters_llm(query: str, message_type: str) -> dict:
+    """Extract parameters using LLM for better accuracy."""
+    try:
+        # Create structured output model
+        param_extractor = llm_fast.with_structured_output(ExtractedParams)
+        system_prompt = ""
+
+        # Create context-aware prompt based on message type
+        if message_type == "get_weather":
+            system_prompt = """Set the longitude and latitude from the user query (i.e. "weather in San Diego" -> lat: 32.7157, lon: -117.1611)"""
+        
+        elif message_type == "song_rec":
+            system_prompt = """Extract user query song details (i.e. "Looking for melodic, upbeat rave songs" -> genres: [melodic, upbeat, rave])"""
+        
+        elif message_type == "get_concerts":
+            system_prompt = """Set genres and lat & long from the user query (i.e. "EDM, House, Trance concerts in LA" -> genres: [EDM, House, Trance], lat: 34.0522, lon: -118.2437)"""
+        
+        elif message_type == "default_llm_response":
+            system_prompt = """Extract any relevant parameters that might be useful for context."""
+        
+        else:
+            system_prompt = """Extract any relevant parameters from the user query."""
+        
+        # Get structured extraction
+        result = param_extractor.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Extract parameters from this query: {query}")
+        ])
+        
+        return result.dict()
+        
+        
+    except Exception as e:
+        print(f"Error extracting parameters with LLM: {str(e)}")
+        return {}
+
 def classify_user_query(state: State) -> State:
-    message = state["messages"][-1]
+    message = state["messages"][0]
+
     # invoke LLM that only returns a structured output
-    classifier_llm = llm.with_structured_output(MessageClassifier)
+    classifier_llm = llm_fast.with_structured_output(MessageClassifier)
     
     # Get the structured output
     result = classifier_llm.invoke([
         SystemMessage(content="You are a message classifier. Analyze the user's message and classify it into one of the specified types."),
         HumanMessage(content=message.content)
     ])
+    logger.info(f"Classified message: {result.message_type}")
+
+    # Extract parameters using LLM
+    extracted_params = extract_parameters_llm(message, result.message_type)
     
-    # Update the state with the classification result
+    # Update the state with the classification result and extracted parameters
     return {
         "messages": state["messages"],
         "message_type": result.message_type,
-        "result": {"classification": result.message_type}
+        "extracted_params": extracted_params
     }
 
 
@@ -83,15 +159,12 @@ def get_LLM_response(state: State) -> State:
     }
 
 
-def structure_user_query(state: State) -> State:
-    return {
-        "messages": state["messages"],
-        "message_type": None,
-        "result": None
-    }
-
-
 # embedd user query
+# Parameters:
+# text: str - The text to embed
+# model: str - The model to use for embedding
+# Returns:
+# list - The embedding of the text
 def get_embedding(text: str, model="text-embedding-ada-002"):
     """Get embedding for text using OpenAI API."""
     try:
@@ -105,6 +178,10 @@ def get_embedding(text: str, model="text-embedding-ada-002"):
         return None
 
 # search for songs using vector similarity
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the song recommendation
 def search_songs(state: State) -> State:
     """Search for songs using vector similarity."""
     query = state["messages"][-1].content
@@ -157,24 +234,33 @@ def search_songs(state: State) -> State:
 
 
 # search for events using TicketMaster API
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the event recommendation
 def ticketmaster_search_event(state: State) -> State:
     """Find the best EDM, House, Electronic, Techno, Trance, and Dubstep events with the most well known artists"""
-    query = state["messages"][-1].content
+    # genres = state.get("extracted_params", {}).get("genres", [])
+    # postal_code = state.get("extracted_params", {}).get("postal_code", "90001")
+    logging.info("Searching for events")
     # Get the flexible parameters
-    genres = ["EDM", "House"]
+    default_genres = ["EDM", "House", "Techno", "Trance", "Dubstep"]
     
     # Your code to call TicketMaster API and return event info
     url = "https://app.ticketmaster.com/discovery/v2/events.json"
-    edm_keywords = ['EDM', 'house',]
 
+    #Query parameters
+    #apikey: TicketMaster API key (String)
+    #preferredCountry: Country code (List of Strings)
+    #sort: Sort by relevance and descending order (String)
+    #size: Number of events to return (String)
+    #classificationName: Genres to search for (List of Strings)
     optimal_edm_params = {
-        'apikey': os.getenv("TICKETMASTER_API_KEY"),
-        "dmaId": "324,381,382,374,385",
-        "preferredCountry": ["US"],
-        "locale": "*",
+        'apikey': os.getenv("TICKETMASTER_API_KEY"), # REQUIRED
         "sort": "relevance,desc",
         "size": "5",
-        "classificationName": genres,
+        "classificationName": state.get("extracted_params", {}).get("genres", default_genres),
+        "latlong": str(state.get("extracted_params", {}).get("lat", 34.0522)) + "," + str(state.get("extracted_params", {}).get("lon", -118.2437))
     }
 
     try:
@@ -182,64 +268,33 @@ def ticketmaster_search_event(state: State) -> State:
         
         # Parse the JSON response
         response_data = response.json()
-        
-        # Debug: Print response structure
-        print(f"Response status: {response.status_code}")
-        print(f"Response keys: {list(response_data.keys())}")
-        
-        # Check if the response contains events
-        if '_embedded' not in response_data or 'events' not in response_data['_embedded']:
-            print("No events found in response")
-            print(f"Available keys in response: {list(response_data.keys())}")
-            if '_embedded' in response_data:
-                print(f"Available keys in _embedded: {list(response_data['_embedded'].keys())}")
-            return {
-                "messages": state["messages"],
-                "message_type": state.get("message_type"),
-                "result": {"events": [], "error": "No events found"}
-            }
-        
+
+        # extract relevant event information from response
         filtered_events = []
-        for event in response_data['_embedded']['events']:
-            # Get the first image URL if available
-            image_url = None
-            if event.get("images") and len(event.get("images")) > 0:
-                image_url = event["images"][0].get("url")
+        for events in response_data["_embedded"]["events"]:
+            name = events["name"]
+            url = events["url"]
+            image_url = events["images"][0]["url"]
             
-            # Get the start date if available
-            start_date = None
-            if event.get("dates") and event["dates"].get("start"):
-                start_date = event["dates"]["start"].get("localDate")
+            filtered_events.append({
+                "name": name,
+                "url": url,
+                "image_url": image_url
+            })
             
-            # Get promoter name if available
-            promoter_name = None
-            if event.get("promoters") and len(event.get("promoters")) > 0:
-                promoter_name = event["promoters"][0].get("name")
-            
-            # Get price range if available
-            price_min = None
-            if event.get("priceRanges") and len(event.get("priceRanges")) > 0:
-                price_min = event["priceRanges"][0].get("min")
-            
-            filtered_event = {
-                "name": event.get("name"),
-                "url": event.get("url"),
-                "image": image_url,
-                "date": start_date,
-                "promoter": promoter_name,
-                "priceRange": price_min,
-            }
-            filtered_events.append(filtered_event)
-        
         return {
             "messages": state["messages"],
             "message_type": state.get("message_type"),
+            "extracted_params": state.get("extracted_params"),
             "result": {
-                "events": filtered_events,
-                "query": query,
-                "genres": genres
+                "events": filtered_events
             }
         }
+
+        
+    
+        
+
 
     except Exception as e:
         print(f"Error searching events: {str(e)}")
@@ -250,6 +305,10 @@ def ticketmaster_search_event(state: State) -> State:
         }
 
 # search for food using Yelp API (TBD)
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the food recommendation
 def yelp_search_food(state: State) -> State:
     """Find the best Pocha, Korean BBQ, Hotpot, Matcha, Boba, Karaoke, and other food options in users location"""
     query = state["messages"][-1].content
@@ -285,48 +344,86 @@ def yelp_search_food(state: State) -> State:
         }
 
 # get weather using OpenWeatherMap API
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the weather recommendation
 def get_weather(state: State) -> State:
-    """Get the weather for the user """
+    """Get the weather for the user using extracted location parameters"""
     query = state["messages"][-1].content
+    extracted_params = state.get("extracted_params", {})
+    
+
+    #Query parameters
+    #lat: Latitude of the location (Float) REQUIRED
+    #lon: Longitude of the location (Float) REQUIRED
+    #appid: OpenWeatherMap API key (String) REQUIRED
+    #units: Units to use for temperature (String) OPTIONAL
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {
-        "lat": "37.7749",
-        "long": "-122.4194",
-        "q": query,
+        "lat": extracted_params.get("latitude", 34.0522),
+        "lon": extracted_params.get("longitude", -118.2437),
         "appid": os.getenv("OPENWEATHERMAP_API_KEY"),
         "units": "imperial"
     }
+    
     try:
         response = requests.get(url, params=params)
-        return {
-            "messages": state["messages"],
-            "message_type": state.get("message_type"),
-            "result": {
-                "weather_data": response.json(),
-                "query": query,
-                "location": {"lat": "37.7749", "long": "-122.4194"}
+        weather_data = response.json()
+        
+        # Check if the API call was successful
+        if weather_data.get("cod") == 200:
+            return {
+                "messages": state["messages"],
+                "message_type": state.get("message_type"),
+                "result": {
+                    "weather_data": weather_data,
+                    "query": query,
+                    "location": clean_location,
+                    "extracted_params": extracted_params
+                },
+                "extracted_params": extracted_params
             }
-        }
+        else:
+            # Try with just the city name if the first attempt failed
+            city_only = clean_location.split(",")[0].strip()
+            params["q"] = city_only
+            
+            response = requests.get(url, params=params)
+            weather_data = response.json()
+            
+            return {
+                "messages": state["messages"],
+                "message_type": state.get("message_type"),
+                "result": {
+                    "weather_data": weather_data,
+                    "query": query,
+                    "location": city_only,
+                    "extracted_params": extracted_params,
+                    "fallback_used": True
+                },
+                "extracted_params": extracted_params
+            }
+            
     except Exception as e:
         print(f"Error getting weather: {str(e)}")
         return {
             "messages": state["messages"],
             "message_type": state.get("message_type"),
-            "result": {"error": f"Error getting weather: {str(e)}"}
+            "result": {"error": f"Error getting weather: {str(e)}"},
+            "extracted_params": extracted_params
         }
 
 
 # Create graph
 graph = StateGraph(State)
-graph.add_node("structure_user_query", structure_user_query)
 graph.add_node("classify_user_query", classify_user_query)
 graph.add_node("song_rec", search_songs)
 graph.add_node("get_concerts", ticketmaster_search_event)
 graph.add_node("get_weather", get_weather)
 graph.add_node("default_llm_response", get_LLM_response)
 
-graph.add_edge(START, "structure_user_query")
-graph.add_edge("structure_user_query", "classify_user_query")
+graph.add_edge(START, "classify_user_query")
 graph.add_conditional_edges("classify_user_query", 
     lambda state: state.get("message_type", "default_llm_response"),
     {
@@ -340,6 +437,8 @@ graph.add_edge("song_rec", END)
 graph.add_edge("get_concerts", END)
 graph.add_edge("get_weather", END)
 graph.add_edge("default_llm_response", END)
+
+
 
 # compile graph
 compiled_graph = graph.compile()
