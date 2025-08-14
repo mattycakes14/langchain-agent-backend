@@ -151,6 +151,10 @@ def get_LLM_response(state: State) -> State:
     query = state["messages"][-1].content
     search_results = state.get("search_results", {})
 
+    # extract links from search results
+    links = [result["url"] for result in search_results["results"]]
+
+    logging.info("[SEARCHING THE WEB] Search results links: " + str(links))
     # retrieve content from previous nodes
     song_rec = state.get("result", {}).get("song_recommendation", {})
     concerts = state.get("result", {}).get("events", {})
@@ -172,7 +176,7 @@ def get_LLM_response(state: State) -> State:
     logging.info("[INTEGRATING RESULT] output: " + str(output))
     try:
         response = llm_main.invoke([
-            SystemMessage(content="You're personality is a SoCal ABG. Output this result in a SoCal ABG way: " + str(output) + " and also include the search results as a list of links: " + str(search_results)),
+            SystemMessage(content="You're personality is a SoCal ABG. Output this result in a SoCal ABG way: " + str(output) + " and also include the search results as a list of links: " + str(links)),
         ])
     except Exception as e:
         print(f"Error getting LLM response: {str(e)}")
