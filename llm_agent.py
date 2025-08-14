@@ -14,6 +14,10 @@ from pydantic import BaseModel, Field
 import openai
 from pinecone import Pinecone
 from typing import Optional, List
+import faiss
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from descriptions_to_aliases import descriptions_to_aliases
 
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +48,7 @@ class State(TypedDict):
 
 # Classify user query
 class MessageClassifier(BaseModel):
-    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather"] = Field(
+    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_food"] = Field(
         description="The type of message the user is sending")
 
 
@@ -66,6 +70,7 @@ class ExtractedParams(BaseModel):
     lon: Optional[float] = Field(description="Extracted longitude from the query", default=None)
     genres: Optional[List[str]] = Field(description="Extracted genres from the query", default=None)
 
+
 # Extract paramters from user query in a format to be used in API calls
 # Parameters:
 # query: str - The user query
@@ -82,6 +87,8 @@ def extract_parameters_llm(query: str, message_type: str) -> dict:
         # Create context-aware prompt based on message type
         if message_type == "get_weather":
             system_prompt = """Set the longitude and latitude from the user query (i.e. "weather in San Diego" -> lat: 32.7157, lon: -117.1611)"""
+        elif message_type == "yelp_search_food":
+            system_prompt = """Extract the longitude and latitude from the user query (i.e. "food in San Diego" -> lat: 32.7157, lon: -117.1611)"""
         
         elif message_type == "song_rec":
             system_prompt = """Extract user query song details (i.e. "Looking for melodic, upbeat rave songs" -> genres: [melodic, upbeat, rave])"""
@@ -318,27 +325,75 @@ def ticketmaster_search_event(state: State) -> State:
 def yelp_search_food(state: State) -> State:
     """Find the best Pocha, Korean BBQ, Hotpot, Matcha, Boba, Karaoke, and other food options in users location"""
     query = state["messages"][-1].content
+    
+    # model to use for embedding
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    # list of descriptions
+    descriptions = list(descriptions_to_aliases.keys())
+    # embed descriptions
+    descriptions_embeddings = model.encode(descriptions)
+    # create faiss index
+    index = faiss.IndexFlatL2(descriptions_embeddings.shape[1])
+    index.add(descriptions_embeddings)
+    
+    # get embedding for query
+    query_embedding = model.encode(query)
+    # reshape to 2D array for FAISS search
+    query_embedding = query_embedding.reshape(1, -1)
+    # search for nearest neighbors
+    distances, indices = index.search(query_embedding, 5)
+    # get descriptions of nearest neighbors
+    nearest_descriptions = [descriptions[i] for i in indices[0]]
+    # get aliases of nearest descriptions
+    aliases = descriptions_to_aliases[nearest_descriptions[0]]
+
+    logging.info("[SEARCHING FOR MATCHING YELP ALIASES] MATCHING YELP ALIASES: " + str(aliases))
+    
     url = "https://api.yelp.com/v3/businesses/search"
     headers = {
         "Authorization": f"Bearer {os.getenv('YELP_API_KEY')}"
     }
+
+    # Query parameters
+    # latitude: Latitude of the location (Float) REQUIRED
+    # longitude: Longitude of the location (Float) REQUIRED
+    # categories: Categories to search for (List of Strings) OPTIONAL
+    # radius: Radius of the search in meters (Integer) OPTIONAL
+    # limit: Number of businesses to return (Integer) OPTIONAL
+    # sort_by: Sort by rating (String) OPTIONAL
     params = {
-        "term": query,
-        "location": "Los Angeles, CA",
-        "radius": 10000,
+        "latitude": state.get("extracted_params", {}).get("lat", 34.0522),
+        "longitude": state.get("extracted_params", {}).get("lon", -118.2437),
+        "categories": aliases,
+        "radius": 20000,
         "limit": 5,
-        "sort_by": "rating",
-        "categories": "korean,Viet,pocha,bbq,hotpot,matcha,boba,karaoke"
+        "sort_by": "best_match"
     }
     try:
         response = requests.get(url, headers=headers, params=params)
+        filtered_results = []
+
+        # extract relevant information from response
+        for result in response.json()["businesses"]:
+            name = result["name"]
+            url = result["url"]
+            image_url = result["image_url"]
+            rating = result["rating"]
+            phone = result["phone"]
+            address = result["location"]["address1"]
+            filtered_results.append({
+                "name": name,
+                "url": url,
+                "image_url": image_url,
+                "rating": rating,
+                "phone": phone,
+                "address": address
+            })
         return {
             "messages": state["messages"],
             "message_type": state.get("message_type"),
             "result": {
-                "food_results": response.json(),
-                "query": query,
-                "location": "Los Angeles, CA"
+                "food_results": filtered_results,
             }
         }
     except Exception as e:
@@ -409,12 +464,16 @@ def get_weather(state: State) -> State:
 
 # Create graph
 graph = StateGraph(State)
+
+# create nodes
 graph.add_node("classify_user_query", classify_user_query)
 graph.add_node("song_rec", search_songs)
 graph.add_node("get_concerts", ticketmaster_search_event)
 graph.add_node("get_weather", get_weather)
 graph.add_node("default_llm_response", get_LLM_response)
+graph.add_node("yelp_search_food", yelp_search_food)
 
+# add edges
 graph.add_edge(START, "classify_user_query")
 graph.add_conditional_edges("classify_user_query", 
     lambda state: state.get("message_type", "default_llm_response"),
@@ -422,12 +481,14 @@ graph.add_conditional_edges("classify_user_query",
         "song_rec": "song_rec",
         "get_concerts": "get_concerts",
         "get_weather": "get_weather",
+        "yelp_search_food": "yelp_search_food",
         "default_llm_response": "default_llm_response"
     }
 )
 graph.add_edge("song_rec", "default_llm_response")
 graph.add_edge("get_concerts", "default_llm_response")
 graph.add_edge("get_weather", "default_llm_response")
+graph.add_edge("yelp_search_food", END)
 graph.add_edge("default_llm_response", END)
 
 
