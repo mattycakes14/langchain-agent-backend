@@ -16,17 +16,9 @@ from pinecone import Pinecone
 from typing import Optional, List
 
 # Configure logging with more detail
-logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG for more verbose output
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('app.log')  # Also save to file
-    ]
-)
+logging.basicConfig(level=logging.INFO)
 
 # Create a logger for your specific module
-logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -73,7 +65,6 @@ class ExtractedParams(BaseModel):
     lat: Optional[float] = Field(description="Extracted latitude from the query", default=None)
     lon: Optional[float] = Field(description="Extracted longitude from the query", default=None)
     genres: Optional[List[str]] = Field(description="Extracted genres from the query", default=None)
-    postal_code: Optional[str] = Field(description="Extracted postal code from the query", default=None)
 
 # Extract paramters from user query in a format to be used in API calls
 # Parameters:
@@ -96,7 +87,8 @@ def extract_parameters_llm(query: str, message_type: str) -> dict:
             system_prompt = """Extract user query song details (i.e. "Looking for melodic, upbeat rave songs" -> genres: [melodic, upbeat, rave])"""
         
         elif message_type == "get_concerts":
-            system_prompt = """Set genres and lat & long from the user query (i.e. "EDM, House, Trance concerts in LA" -> genres: [EDM, House, Trance], lat: 34.0522, lon: -118.2437)"""
+            system_prompt = """Set genres and lat & long from the user query. If user doesn't specify a start date and time, set it to the current date and time.
+            (i.e. "EDM, House, Trance concerts in LA" -> genres: [EDM, House, Trance], lat: 34.0522, lon: -118.2437)"""
         
         elif message_type == "default_llm_response":
             system_prompt = """Extract any relevant parameters that might be useful for context."""
@@ -128,11 +120,12 @@ def classify_user_query(state: State) -> State:
         SystemMessage(content="You are a message classifier. Analyze the user's message and classify it into one of the specified types."),
         HumanMessage(content=message.content)
     ])
-    logger.info(f"Classified message: {result.message_type}")
+    logging.info(f"[CLASSIFYING MESSAGE] Classified message: {result.message_type}")
 
     # Extract parameters using LLM
     extracted_params = extract_parameters_llm(message, result.message_type)
     
+    logging.info(f"[EXTRACTING PARAMETERS] Extracted parameters: {extracted_params}")
     # Update the state with the classification result and extracted parameters
     return {
         "messages": state["messages"],
@@ -144,10 +137,25 @@ def classify_user_query(state: State) -> State:
 def get_LLM_response(state: State) -> State:
     query = state["messages"][-1].content
 
+    # retrieve content from previous nodes
+    song_rec = state.get("result", {}).get("song_recommendation", {})
+    concerts = state.get("result", {}).get("events", {})
+    weather = state.get("result", {}).get("weather_data", {})
+
+    output = None
+    if song_rec:
+        output = song_rec
+    elif concerts:
+        output = concerts
+    elif weather:
+        output = weather
+    else:
+        output = query
+
+    logging.info("[INTEGRATING RESULT] output: " + str(output))
     try:
-        response = llm.invoke([
-            SystemMessage(content="You are a SoCal ABG. INCLUDE ALL DETAILS OF THE RESPONSE"),
-            HumanMessage(content=query)
+        response = llm_main.invoke([
+            SystemMessage(content="You're personality is a SoCal ABG. Output this result in a SoCal ABG way: " + str(output)),
         ])
     except Exception as e:
         print(f"Error getting LLM response: {str(e)}")
@@ -184,7 +192,7 @@ def get_embedding(text: str, model="text-embedding-ada-002"):
 # State - The updated state with the song recommendation
 def search_songs(state: State) -> State:
     """Search for songs using vector similarity."""
-    query = state["messages"][-1].content
+    query = state["messages"][0].content
     try:
         # Get embedding for the query
         print(f"Getting embedding for query: '{query}'")
@@ -197,11 +205,9 @@ def search_songs(state: State) -> State:
                 "message_type": state.get("message_type"),
                 "result": {"error": "Failed to get embedding for query"}
             }
-        
-        top_k = 5
         results = index.query(
             vector=query_embedding,
-            top_k=top_k,
+            top_k=1,
             include_metadata=True
         )
         
@@ -212,9 +218,7 @@ def search_songs(state: State) -> State:
                 "messages": state["messages"],
                 "message_type": state.get("message_type"),
                 "result": {
-                    "song_recommendation": song_info,
-                    "query": query,
-                    "top_k": top_k
+                    "song_recommendation": song_info
                 }
             }
         else:
@@ -242,7 +246,7 @@ def ticketmaster_search_event(state: State) -> State:
     """Find the best EDM, House, Electronic, Techno, Trance, and Dubstep events with the most well known artists"""
     # genres = state.get("extracted_params", {}).get("genres", [])
     # postal_code = state.get("extracted_params", {}).get("postal_code", "90001")
-    logging.info("Searching for events")
+    logging.info("[SEARCHING FOR EVENTS] Searching for events")
     # Get the flexible parameters
     default_genres = ["EDM", "House", "Techno", "Trance", "Dubstep"]
     
@@ -260,7 +264,8 @@ def ticketmaster_search_event(state: State) -> State:
         "sort": "relevance,desc",
         "size": "5",
         "classificationName": state.get("extracted_params", {}).get("genres", default_genres),
-        "latlong": str(state.get("extracted_params", {}).get("lat", 34.0522)) + "," + str(state.get("extracted_params", {}).get("lon", -118.2437))
+        "latlong": str(state.get("extracted_params", {}).get("lat", 34.0522)) + "," + str(state.get("extracted_params", {}).get("lon", -118.2437)),
+        "radius": "25"
     }
 
     try:
@@ -281,7 +286,8 @@ def ticketmaster_search_event(state: State) -> State:
                 "url": url,
                 "image_url": image_url
             })
-            
+
+        logging.info("[SEARCHING FOR EVENTS] Found events: " + str(filtered_events))
         return {
             "messages": state["messages"],
             "message_type": state.get("message_type"),
@@ -361,8 +367,8 @@ def get_weather(state: State) -> State:
     #units: Units to use for temperature (String) OPTIONAL
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {
-        "lat": extracted_params.get("latitude", 34.0522),
-        "lon": extracted_params.get("longitude", -118.2437),
+        "lat": extracted_params.get("lat", 34.0522),
+        "lon": extracted_params.get("lon", -118.2437),
         "appid": os.getenv("OPENWEATHERMAP_API_KEY"),
         "units": "imperial"
     }
@@ -378,29 +384,15 @@ def get_weather(state: State) -> State:
                 "message_type": state.get("message_type"),
                 "result": {
                     "weather_data": weather_data,
-                    "query": query,
-                    "location": clean_location,
-                    "extracted_params": extracted_params
                 },
                 "extracted_params": extracted_params
             }
         else:
-            # Try with just the city name if the first attempt failed
-            city_only = clean_location.split(",")[0].strip()
-            params["q"] = city_only
-            
-            response = requests.get(url, params=params)
-            weather_data = response.json()
-            
             return {
                 "messages": state["messages"],
                 "message_type": state.get("message_type"),
                 "result": {
-                    "weather_data": weather_data,
-                    "query": query,
-                    "location": city_only,
-                    "extracted_params": extracted_params,
-                    "fallback_used": True
+                    "weather_data": "No weather data found"
                 },
                 "extracted_params": extracted_params
             }
@@ -433,9 +425,9 @@ graph.add_conditional_edges("classify_user_query",
         "default_llm_response": "default_llm_response"
     }
 )
-graph.add_edge("song_rec", END)
-graph.add_edge("get_concerts", END)
-graph.add_edge("get_weather", END)
+graph.add_edge("song_rec", "default_llm_response")
+graph.add_edge("get_concerts", "default_llm_response")
+graph.add_edge("get_weather", "default_llm_response")
 graph.add_edge("default_llm_response", END)
 
 
