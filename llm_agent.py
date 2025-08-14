@@ -18,6 +18,8 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from descriptions_to_aliases import descriptions_to_aliases
+from tavily import TavilyClient
+
 
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +27,9 @@ logging.basicConfig(level=logging.INFO)
 # Create a logger for your specific module
 
 load_dotenv()
+
+# configure tavily client
+tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 # openrouter api key
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -45,6 +50,7 @@ class State(TypedDict):
     message_type: str | None
     result: dict | None
     extracted_params: dict | None  # Add this back
+    search_results: dict | None
 
 # Classify user query
 class MessageClassifier(BaseModel):
@@ -143,15 +149,19 @@ def classify_user_query(state: State) -> State:
 
 def get_LLM_response(state: State) -> State:
     query = state["messages"][-1].content
+    search_results = state.get("search_results", {})
 
     # retrieve content from previous nodes
     song_rec = state.get("result", {}).get("song_recommendation", {})
     concerts = state.get("result", {}).get("events", {})
     weather = state.get("result", {}).get("weather_data", {})
+    food = state.get("result", {}).get("food_results", {})
 
     output = None
     if song_rec:
         output = song_rec
+    elif food:
+        output = food
     elif concerts:
         output = concerts
     elif weather:
@@ -162,7 +172,7 @@ def get_LLM_response(state: State) -> State:
     logging.info("[INTEGRATING RESULT] output: " + str(output))
     try:
         response = llm_main.invoke([
-            SystemMessage(content="You're personality is a SoCal ABG. Output this result in a SoCal ABG way: " + str(output)),
+            SystemMessage(content="You're personality is a SoCal ABG. Output this result in a SoCal ABG way: " + str(output) + " and also include the search results as a list of links: " + str(search_results)),
         ])
     except Exception as e:
         print(f"Error getting LLM response: {str(e)}")
@@ -303,12 +313,6 @@ def ticketmaster_search_event(state: State) -> State:
                 "events": filtered_events
             }
         }
-
-        
-    
-        
-
-
     except Exception as e:
         print(f"Error searching events: {str(e)}")
         return {
@@ -461,6 +465,21 @@ def get_weather(state: State) -> State:
             "extracted_params": extracted_params
         }
 
+# search engine fallback for user query
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the search engine results
+def search_web(state: State) -> State:
+    """Search the web for the user query"""
+    logging.info("[SEARCHING THE WEB] Searching the web for the user query")
+    query = state["messages"][-1].content
+    results = tavily_client.search(query, max_results=5)
+
+    logging.info("[SEARCHING THE WEB] Search results: " + str(results))
+    return {
+        "search_results": results
+    }
 
 # Create graph
 graph = StateGraph(State)
@@ -472,6 +491,7 @@ graph.add_node("get_concerts", ticketmaster_search_event)
 graph.add_node("get_weather", get_weather)
 graph.add_node("default_llm_response", get_LLM_response)
 graph.add_node("yelp_search_food", yelp_search_food)
+graph.add_node("search_web", search_web)
 
 # add edges
 graph.add_edge(START, "classify_user_query")
@@ -485,10 +505,12 @@ graph.add_conditional_edges("classify_user_query",
         "default_llm_response": "default_llm_response"
     }
 )
+graph.add_edge("classify_user_query", "search_web")
+graph.add_edge("search_web", "default_llm_response")
 graph.add_edge("song_rec", "default_llm_response")
 graph.add_edge("get_concerts", "default_llm_response")
 graph.add_edge("get_weather", "default_llm_response")
-graph.add_edge("yelp_search_food", END)
+graph.add_edge("yelp_search_food", "default_llm_response")
 graph.add_edge("default_llm_response", END)
 
 
