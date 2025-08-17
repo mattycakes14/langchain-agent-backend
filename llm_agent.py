@@ -19,7 +19,8 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from descriptions_to_aliases import descriptions_to_aliases
 from tavily import TavilyClient
-
+import random
+from concert_filters import festival_to_description
 
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
@@ -54,8 +55,9 @@ class State(TypedDict):
 
 # Classify user query
 class MessageClassifier(BaseModel):
-    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_food"] = Field(
+    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities"] = Field(
         description="The type of message the user is sending")
+
 
 
 llm_main = init_chat_model(
@@ -74,7 +76,7 @@ llm_fast = init_chat_model(
 class ExtractedParams(BaseModel):
     lat: Optional[float] = Field(description="Extracted latitude from the query", default=None)
     lon: Optional[float] = Field(description="Extracted longitude from the query", default=None)
-    genres: Optional[List[str]] = Field(description="Extracted genres from the query", default=None)
+    keyword: Optional[str] = Field(description="Extracted main keyword from the query", default=None)
 
 
 # Extract paramters from user query in a format to be used in API calls
@@ -93,19 +95,21 @@ def extract_parameters_llm(query: str, message_type: str) -> dict:
         # Create context-aware prompt based on message type
         if message_type == "get_weather":
             system_prompt = """Set the longitude and latitude from the user query (i.e. "weather in San Diego" -> lat: 32.7157, lon: -117.1611)"""
-        elif message_type == "yelp_search_food":
+        elif message_type == "yelp_search_activities":
             system_prompt = """Extract the longitude and latitude from the user query (i.e. "food in San Diego" -> lat: 32.7157, lon: -117.1611)"""
         
         elif message_type == "song_rec":
             system_prompt = """Extract user query song details (i.e. "Looking for melodic, upbeat rave songs" -> genres: [melodic, upbeat, rave])"""
         
         elif message_type == "get_concerts":
-            system_prompt = """Set genres and lat & long from the user query. If user doesn't specify a start date and time, set it to the current date and time.
-            (i.e. "EDM, House, Trance concerts in LA" -> genres: [EDM, House, Trance], lat: 34.0522, lon: -118.2437)"""
+            system_prompt = """Set lat & long from the user query. If user doesn't specify a start date and time, set it to the current date and time.
+            (i.e. "What are some EDM concerts in LA?" -> lat: 34.0522, lon: -118.2437)"""
         
         elif message_type == "default_llm_response":
             system_prompt = """Extract any relevant parameters that might be useful for context."""
         
+        elif message_type == "yelp_search_activities":
+            system_prompt = """Extract the longitude and latitude from the user query, (i.e. "food in San Diego" -> lat: 32.7157, lon: -117.1611)"""
         else:
             system_prompt = """Extract any relevant parameters from the user query."""
         
@@ -128,9 +132,21 @@ def classify_user_query(state: State) -> State:
     # invoke LLM that only returns a structured output
     classifier_llm = llm_fast.with_structured_output(MessageClassifier)
     
+    # content of message
+    content = """
+    You are a message classifier. Analyze the user's message and classify it into one of the specified types.
+    The user's message is: {message}
+    The message types are:
+    - song_rec: The user is asking for a song recommendation.
+    - get_concerts: The user is asking for a concert recommendation.
+    - get_weather: The user is asking for the weather.
+    - yelp_search_activities: The user is asking for a restaurant, cafe, or other activity recommendation.
+    - default_llm_response: The user is asking a question that doesn't fit into any of the other categories.
+    """
+
     # Get the structured output
     result = classifier_llm.invoke([
-        SystemMessage(content="You are a message classifier. Analyze the user's message and classify it into one of the specified types."),
+        SystemMessage(content=content),
         HumanMessage(content=message.content)
     ])
     logging.info(f"[CLASSIFYING MESSAGE] Classified message: {result.message_type}")
@@ -150,9 +166,12 @@ def classify_user_query(state: State) -> State:
 def get_LLM_response(state: State) -> State:
     query = state["messages"][-1].content
     search_results = state.get("search_results", {})
-
+    
     # extract links from search results
-    links = [result["url"] for result in search_results["results"]]
+    if 'results' in search_results and search_results['results']:
+        links = [result["url"] for result in search_results['results']]
+    else:
+        links = []
 
     logging.info("[SEARCHING THE WEB] Search results links: " + str(links))
     # retrieve content from previous nodes
@@ -183,7 +202,8 @@ def get_LLM_response(state: State) -> State:
         
         Here is the user query: """ + query + """
         Here is the output: """ + str(output) + """
-        Here is the search results: """ + str(links) + """
+        
+        List the search results in a numbered list. """ + str(links) + """
         """
     try:
         response = llm_main.invoke([
@@ -276,16 +296,40 @@ def search_songs(state: State) -> State:
 # State - The updated state with the event recommendation
 def ticketmaster_search_event(state: State) -> State:
     """Find the best EDM, House, Electronic, Techno, Trance, and Dubstep events with the most well known artists"""
-    # genres = state.get("extracted_params", {}).get("genres", [])
-    # postal_code = state.get("extracted_params", {}).get("postal_code", "90001")
+
     logging.info("[SEARCHING FOR EVENTS] Searching for events")
-    # Get the flexible parameters
-    default_genres = ["EDM", "House", "Techno", "Trance", "Dubstep"]
+    query = state["messages"][-1].content
     
+    # model to use for embedding
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    # get description of genres
+    descriptions = list(festival_to_description.keys())
+
+    # embed descriptions
+    descriptions_embeddings = model.encode(descriptions)
+    # create faiss index
+    index = faiss.IndexFlatL2(descriptions_embeddings.shape[1])
+    index.add(descriptions_embeddings)
+    
+    # get embedding for query
+    query_embedding = model.encode(query)
+    # reshape to 2D array for FAISS search
+    query_embedding = query_embedding.reshape(1, -1)
+    # search for nearest neighbors
+    distances, indices = index.search(query_embedding, 5)
+    # get closest description
+    closest_description = descriptions[indices[0][0]]
+
+    # get description of closest description
+    festival = festival_to_description[closest_description]
+    
+    logging.info("[BEST MATCH FESTIVAL] " + str(festival))
+
     # Your code to call TicketMaster API and return event info
     url = "https://app.ticketmaster.com/discovery/v2/events.json"
 
-    #Query parameters
+    # Query parameters
     #apikey: TicketMaster API key (String)
     #preferredCountry: Country code (List of Strings)
     #sort: Sort by relevance and descending order (String)
@@ -295,16 +339,18 @@ def ticketmaster_search_event(state: State) -> State:
         'apikey': os.getenv("TICKETMASTER_API_KEY"), # REQUIRED
         "sort": "relevance,desc",
         "size": "5",
-        "classificationName": state.get("extracted_params", {}).get("genres", default_genres),
-        "latlong": str(state.get("extracted_params", {}).get("lat", 34.0522)) + "," + str(state.get("extracted_params", {}).get("lon", -118.2437)),
+        "keyword": festival.replace(" ", ""),
         "radius": "25"
     }
 
     try:
         response = requests.get(url, params=optimal_edm_params)
         
+        
         # Parse the JSON response
         response_data = response.json()
+
+        logging.info("[RESPONSE]: " + str(response.json()))
 
         # extract relevant event information from response
         filtered_events = []
@@ -341,7 +387,7 @@ def ticketmaster_search_event(state: State) -> State:
 # state: State - The current state of the graph
 # Returns:
 # State - The updated state with the food recommendation
-def yelp_search_food(state: State) -> State:
+def yelp_search_activities(state: State) -> State:
     """Find the best Pocha, Korean BBQ, Hotpot, Matcha, Boba, Karaoke, and other food options in users location"""
     query = state["messages"][-1].content
     
@@ -390,6 +436,8 @@ def yelp_search_food(state: State) -> State:
     }
     try:
         response = requests.get(url, headers=headers, params=params)
+
+        logging.info("[Response]: " + str(response.json()))
         filtered_results = []
 
         # extract relevant information from response
@@ -408,6 +456,7 @@ def yelp_search_food(state: State) -> State:
                 "phone": phone,
                 "address": address
             })
+        logging.info("[SEARCHING FOR YELP ACTIVITIES] Found activities: " + str(filtered_results))
         return {
             "messages": state["messages"],
             "message_type": state.get("message_type"),
@@ -505,7 +554,7 @@ graph.add_node("song_rec", search_songs)
 graph.add_node("get_concerts", ticketmaster_search_event)
 graph.add_node("get_weather", get_weather)
 graph.add_node("default_llm_response", get_LLM_response)
-graph.add_node("yelp_search_food", yelp_search_food)
+graph.add_node("yelp_search_activities", yelp_search_activities)
 graph.add_node("search_web", search_web)
 
 # add edges
@@ -516,16 +565,16 @@ graph.add_conditional_edges("classify_user_query",
         "song_rec": "song_rec",
         "get_concerts": "get_concerts",
         "get_weather": "get_weather",
-        "yelp_search_food": "yelp_search_food",
+        "yelp_search_activities": "yelp_search_activities",
         "default_llm_response": "default_llm_response"
     }
 )
 graph.add_edge("classify_user_query", "search_web")
 graph.add_edge("search_web", "default_llm_response")
 graph.add_edge("song_rec", "default_llm_response")
-graph.add_edge("get_concerts", "default_llm_response")
+graph.add_edge("get_concerts", END) # temporary
 graph.add_edge("get_weather", "default_llm_response")
-graph.add_edge("yelp_search_food", "default_llm_response")
+graph.add_edge("yelp_search_activities", "default_llm_response")
 graph.add_edge("default_llm_response", END)
 
 

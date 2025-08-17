@@ -26,6 +26,24 @@ pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 # Connect to an existing index
 index = pc.Index("socalabg")
 
+def clear_index():
+    """Clear all vectors from the Pinecone index."""
+    try:
+        logger.info("Clearing all vectors from Pinecone index...")
+        # Delete all vectors by fetching all IDs first
+        stats = index.describe_index_stats()
+        total_vectors = stats.total_vector_count
+        
+        if total_vectors > 0:
+            # Delete all vectors (this will remove everything)
+            index.delete(delete_all=True)
+            logger.info(f"Successfully cleared {total_vectors} vectors from the index")
+        else:
+            logger.info("Index is already empty")
+    except Exception as e:
+        logger.error(f"Error clearing index: {str(e)}")
+        raise
+
 def get_embedding(text: str, model="text-embedding-ada-002"):
     """Get embedding for text using OpenAI API."""
     try:
@@ -112,5 +130,13 @@ def vectorize_songs():
         raise
 
 if __name__ == "__main__":
+    # Clear the index first
+    try:
+        clear_index()
+    except Exception as e:
+        logger.error(f"Failed to clear index: {str(e)}")
+        exit(1)
+    
+    # Vectorize songs
     vectorize_songs()
     print(index.describe_index_stats())
