@@ -21,13 +21,25 @@ from descriptions_to_aliases import descriptions_to_aliases
 from tavily import TavilyClient
 import random
 from concert_filters import festival_to_description
+from arcadepy import Arcade
+from langchain_arcade import ArcadeToolManager
 
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
 
-# Create a logger for your specific module
 
 load_dotenv()
+
+# arcade client
+client = Arcade(api_key=os.getenv("ARCADE_API_KEY"))
+manager = ArcadeToolManager(api_key=os.getenv("ARCADE_API_KEY"))
+# get toolkits
+tools = manager.get_tools(toolkits=["GoogleCalendar"])
+
+# user id for application
+user_id = "mlau191@uw.edu"
+
+
 
 # configure tavily client
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -55,8 +67,16 @@ class State(TypedDict):
 
 # Classify user query
 class MessageClassifier(BaseModel):
-    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities"] = Field(
+    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event"] = Field(
         description="The type of message the user is sending")
+
+# Calendar state model
+class CalendarState(BaseModel):
+    summary: str = Field(description="The summary of the event")
+    description: Optional[str] = Field(description="The description of the event")
+    start_datetime: str = Field(description="The start date and time of the event in ISO 8601 format")
+    end_datetime: str = Field(description="The end date and time of the event in ISO 8601 format")
+    location: Optional[str] = Field(description="The location of the event")
 
 
 
@@ -119,7 +139,7 @@ def extract_parameters_llm(query: str, message_type: str) -> dict:
             HumanMessage(content=f"Extract parameters from this query: {query}")
         ])
         
-        return result.dict()
+        return result.model_dump()
         
         
     except Exception as e:
@@ -141,6 +161,7 @@ def classify_user_query(state: State) -> State:
     - get_concerts: The user is asking for a concert recommendation.
     - get_weather: The user is asking for the weather.
     - yelp_search_activities: The user is asking for a restaurant, cafe, or other activity recommendation.
+    - create_calendar_event: The user wants to create a calendar event, schedule something, or add an event to their calendar.
     - default_llm_response: The user is asking a question that doesn't fit into any of the other categories.
     """
 
@@ -179,6 +200,8 @@ def get_LLM_response(state: State) -> State:
     concerts = state.get("result", {}).get("events", {})
     weather = state.get("result", {}).get("weather_data", {})
     food = state.get("result", {}).get("food_results", {})
+    calendar_results = state.get("result", {}).get("calendar_results", {})
+    auth_complete = state.get("result", {}).get("auth_complete", {})
 
     output = None
     if song_rec:
@@ -189,6 +212,10 @@ def get_LLM_response(state: State) -> State:
         output = concerts
     elif weather:
         output = weather
+    elif calendar_results:
+        output = calendar_results
+    elif auth_complete:
+        output = auth_complete
     else:
         output = query
 
@@ -339,7 +366,7 @@ def ticketmaster_search_event(state: State) -> State:
         'apikey': os.getenv("TICKETMASTER_API_KEY"), # REQUIRED
         "sort": "relevance,desc",
         "size": "5",
-        "keyword": festival.replace(" ", ""),
+        "keyword": festival,
         "radius": "25"
     }
 
@@ -529,6 +556,99 @@ def get_weather(state: State) -> State:
             "extracted_params": extracted_params
         }
 
+# query google calendar
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the calendar results
+def query_google_calendar(state: State) -> State:
+    """Query the user's Google Calendar for events"""
+    try:
+        logging.info("[GOOGLE CALENDAR] Starting calendar event creation")
+        
+        # Generate calendar event parameters using LLM
+        generate_params = llm_fast.with_structured_output(CalendarState)
+        
+        system_prompt = """Generate a calendar event for the user based on their query. 
+        Required fields: summary, start_datetime, end_datetime
+        Optional fields: description, calendar_id, location (Don't use None for any fields, use empty string if needed)
+        Use ISO 8601 format for dates (e.g., "2024-01-15T14:30:00Z")
+        If no specific time is mentioned, use reasonable defaults."""
+        
+        result = generate_params.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=state["messages"][-1].content)
+        ])
+        # convert pydantic class to dictionary
+        if isinstance(result, BaseModel):
+            result_dict = result.model_dump()
+        else:
+            result_dict = CalendarState(**result).model_dump()
+        
+        logging.info(f"[GOOGLE CALENDAR] Generated event params: {result_dict}")
+        
+        # Get the first available tool (Google Calendar)
+        if not tools:
+            raise Exception("No Google Calendar tools available")
+        
+        tool_name = "GoogleCalendar.CreateEvent"
+        logging.info(f"[GOOGLE CALENDAR] Using tool: {tool_name}")
+        
+        # Authorize user
+        auth_response = client.tools.authorize(
+            user_id=user_id,
+            tool_name=tool_name
+        )
+        
+        # Check if authorization is needed
+        if hasattr(auth_response, 'url') and auth_response.url:
+            logging.info(f"[GOOGLE CALENDAR] Authorization required: {auth_response.url}")
+            return {
+                "messages": state["messages"],
+                "message_type": state.get("message_type"),
+                "result": {
+                    "calendar_results": f"Please authorize Google Calendar access: {auth_response.url}"
+                }
+            }
+        
+        # Wait for authorization completion
+        client.auth.wait_for_completion(auth_response)
+        
+        # prepare input for tool from pydantic model
+        tool_input = {k: result_dict.get(k) for k in [
+            "summary", "description", "start_datetime", "end_datetime", "location"
+        ]}
+
+
+        # Execute the calendar tool
+        response = client.tools.execute(
+            user_id=user_id,
+            tool_name=tool_name,
+            input=tool_input
+        )
+        
+        logging.info(f"[GOOGLE CALENDAR] Tool execution response: {response}")
+        
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "calendar_results": "Successfully created calendar event",
+                "calendar_link": response.get('htmlLink', 'No link found')
+            }
+        }
+        
+    except Exception as e:
+        logging.error(f"[GOOGLE CALENDAR] Error: {str(e)}")
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "calendar_results": f"Failed to create calendar event: {str(e)}"
+            }
+        }
+
+
 # search engine fallback for user query
 # Parameters:
 # state: State - The current state of the graph
@@ -556,6 +676,7 @@ graph.add_node("get_weather", get_weather)
 graph.add_node("default_llm_response", get_LLM_response)
 graph.add_node("yelp_search_activities", yelp_search_activities)
 graph.add_node("search_web", search_web)
+graph.add_node("create_calendar_event", query_google_calendar)
 
 # add edges
 graph.add_edge(START, "classify_user_query")
@@ -566,15 +687,17 @@ graph.add_conditional_edges("classify_user_query",
         "get_concerts": "get_concerts",
         "get_weather": "get_weather",
         "yelp_search_activities": "yelp_search_activities",
+        "create_calendar_event": "create_calendar_event",
         "default_llm_response": "default_llm_response"
     }
 )
-graph.add_edge("classify_user_query", "search_web")
+# graph.add_edge("classify_user_query", "search_web")
 graph.add_edge("search_web", "default_llm_response")
 graph.add_edge("song_rec", "default_llm_response")
-graph.add_edge("get_concerts", END) # temporary
+graph.add_edge("get_concerts", "default_llm_response") # temporary
 graph.add_edge("get_weather", "default_llm_response")
 graph.add_edge("yelp_search_activities", "default_llm_response")
+graph.add_edge("create_calendar_event", END)
 graph.add_edge("default_llm_response", END)
 
 
