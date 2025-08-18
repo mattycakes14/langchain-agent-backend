@@ -33,6 +33,12 @@ load_dotenv()
 # arcade client
 client = Arcade(api_key=os.getenv("ARCADE_API_KEY"))
 manager = ArcadeToolManager(api_key=os.getenv("ARCADE_API_KEY"))
+
+# Configure SerpAPI key for Google Flights toolkit
+SERP_API_KEY = os.getenv("SERP_API_KEY")
+if not SERP_API_KEY:
+    print("Warning: SERP_API_KEY not found in environment variables. Google Flights functionality may not work.")
+
 # get toolkits
 tools = manager.get_tools(toolkits=["GoogleCalendar"])
 
@@ -67,7 +73,7 @@ class State(TypedDict):
 
 # Classify user query
 class MessageClassifier(BaseModel):
-    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event"] = Field(
+    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights"] = Field(
         description="The type of message the user is sending")
 
 # Calendar state model
@@ -78,7 +84,12 @@ class CalendarState(BaseModel):
     end_datetime: str = Field(description="The end date and time of the event in ISO 8601 format")
     location: Optional[str] = Field(description="The location of the event")
 
-
+class FlightState(BaseModel):
+    departure_airport_code: str = Field(description="The departure airport code (UPPERCASE 3-LETTER CODE)")
+    arrival_airport_code: str = Field(description="The arrival airport code (UPPERCASE 3-LETTER CODE)")
+    outbound_date: str = Field(description="The outbound date of the flight in YYYY-MM-DD format")
+    num_adults: int = Field(description="The number of adults on the flight")
+    sort_by: str = Field(description="The sort order of the flights (TOP_FlIGHTS, PRICE, DURATION, DEPARTURE_TIME, ARRIVAL_TIME)")
 
 llm_main = init_chat_model(
     model="gpt-4o-mini",
@@ -130,6 +141,9 @@ def extract_parameters_llm(query: str, message_type: str) -> dict:
         
         elif message_type == "yelp_search_activities":
             system_prompt = """Extract the longitude and latitude from the user query, (i.e. "food in San Diego" -> lat: 32.7157, lon: -117.1611)"""
+        
+        elif message_type == "get_google_flights":
+            system_prompt = """Extract the departure and arrival airport codes from the user query, (i.e. "flights from LA to SF" -> departure_airport_code: LAX, arrival_airport_code: SFO)"""
         else:
             system_prompt = """Extract any relevant parameters from the user query."""
         
@@ -162,6 +176,7 @@ def classify_user_query(state: State) -> State:
     - get_weather: The user is asking for the weather.
     - yelp_search_activities: The user is asking for a restaurant, cafe, or other activity recommendation.
     - create_calendar_event: The user wants to create a calendar event, schedule something, or add an event to their calendar.
+    - get_google_flights: The user is asking for flight information.
     - default_llm_response: The user is asking a question that doesn't fit into any of the other categories.
     """
 
@@ -649,6 +664,80 @@ def query_google_calendar(state: State) -> State:
         }
 
 
+# get google flights
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the flight results
+def get_google_flights(state: State) -> State:
+    """Get the best flights for the user using extracted location parameters"""
+    query = state["messages"][-1].content
+
+    generate_params = llm_fast.with_structured_output(FlightState)
+    system_prompt = """Fill in the flight parameters for the user's query. 
+    Required fields: departure_airport_code, arrival_airport_code, outbound_date
+    Optional fields: num_adults, sort_by
+    
+    If user query doesn't provide enough information, use reasonable defaults.
+    EVERYTHING MUST BE UPPERCASE
+    """
+    flight_params = generate_params.invoke([SystemMessage(content=system_prompt), HumanMessage(content=query)])
+
+    logging.info(f"[GOOGLE FLIGHTS] Generated FlightState: {flight_params.model_dump()}")
+    converted_params = flight_params.model_dump()
+    try:
+        tool_name = "GoogleFlights.SearchOneWayFlights"
+    
+        tool_input = {
+            "departure_airport_code": converted_params.get("departure_airport_code", "LAX"),
+            "arrival_airport_code": converted_params.get("arrival_airport_code", "SFO"),
+            "outbound_date": converted_params.get("outbound_date", "2025-08-19"),
+            "num_adults": converted_params.get("num_adults", 1),
+            "sort_by": converted_params.get("sort_by", "PRICE"),
+        }
+
+        response = client.tools.execute(
+            tool_name=tool_name,
+            input=tool_input,
+            user_id=user_id
+        )
+
+        logging.info(f"[GOOGLE FLIGHTS] Tool execution response: {response}")
+
+        results = response.output.value
+        filtered_results = []
+        if results:
+            # extract relevant information from results
+            for result in results['flights']:
+                airline_logo = result["airline_logo"]
+                extra_info = result["extensions"]
+                flight_segments = result["flights"]
+                price = result["price"]
+                total_duration = result["total_duration"]
+                filtered_results.append({
+                    "airline_logo": airline_logo,
+                    "extra_info": extra_info,
+                    "flight_segments": flight_segments,
+                    "price": price,
+                    "total_duration": total_duration,
+                })
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "flight_results": filtered_results
+            }
+        }
+    except Exception as e:
+        logging.error(f"[GOOGLE FLIGHTS] Error: {str(e)}")
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "flight_results": f"Failed to get flights: {str(e)}"
+            }
+        }
+
 # search engine fallback for user query
 # Parameters:
 # state: State - The current state of the graph
@@ -677,6 +766,7 @@ graph.add_node("default_llm_response", get_LLM_response)
 graph.add_node("yelp_search_activities", yelp_search_activities)
 graph.add_node("search_web", search_web)
 graph.add_node("create_calendar_event", query_google_calendar)
+graph.add_node("get_google_flights", get_google_flights)
 
 # add edges
 graph.add_edge(START, "classify_user_query")
@@ -688,6 +778,7 @@ graph.add_conditional_edges("classify_user_query",
         "get_weather": "get_weather",
         "yelp_search_activities": "yelp_search_activities",
         "create_calendar_event": "create_calendar_event",
+        "get_google_flights": "get_google_flights",
         "default_llm_response": "default_llm_response"
     }
 )
@@ -698,6 +789,7 @@ graph.add_edge("get_concerts", "default_llm_response") # temporary
 graph.add_edge("get_weather", "default_llm_response")
 graph.add_edge("yelp_search_activities", "default_llm_response")
 graph.add_edge("create_calendar_event", END)
+graph.add_edge("get_google_flights", END)
 graph.add_edge("default_llm_response", END)
 
 
