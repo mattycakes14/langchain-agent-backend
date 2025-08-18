@@ -45,8 +45,6 @@ tools = manager.get_tools(toolkits=["GoogleCalendar"])
 # user id for application
 user_id = "mlau191@uw.edu"
 
-
-
 # configure tavily client
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
@@ -73,7 +71,7 @@ class State(TypedDict):
 
 # Classify user query
 class MessageClassifier(BaseModel):
-    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights"] = Field(
+    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights", "get_google_hotels"] = Field(
         description="The type of message the user is sending")
 
 # Calendar state model
@@ -84,12 +82,24 @@ class CalendarState(BaseModel):
     end_datetime: str = Field(description="The end date and time of the event in ISO 8601 format")
     location: Optional[str] = Field(description="The location of the event")
 
+# Flight state model
 class FlightState(BaseModel):
     departure_airport_code: str = Field(description="The departure airport code (UPPERCASE 3-LETTER CODE)")
     arrival_airport_code: str = Field(description="The arrival airport code (UPPERCASE 3-LETTER CODE)")
     outbound_date: str = Field(description="The outbound date of the flight in YYYY-MM-DD format")
     num_adults: int = Field(description="The number of adults on the flight")
     sort_by: str = Field(description="The sort order of the flights (TOP_FlIGHTS, PRICE, DURATION, DEPARTURE_TIME, ARRIVAL_TIME)")
+
+# Hotel state model
+class HotelState(BaseModel):
+    location: str = Field(description="The location of the hotel")
+    check_in_date: str = Field(description="The check-in date of the hotel in YYYY-MM-DD format")
+    check_out_date: str = Field(description="The check-out date of the hotel in YYYY-MM-DD format")
+    query: str = Field(description="The user query")
+    min_price: int = Field(description="The minimum price of the hotel")
+    max_price: int = Field(description="The maximum price of the hotel")
+    num_adults: int = Field(description="The number of adults on the hotel")
+    sort_by: str = Field(description="The sort order of the hotels (RELEVANCE, LOWEST_PRICE, HIGHEST_RATING, MOST_REVIEWED)")
 
 llm_main = init_chat_model(
     model="gpt-4o-mini",
@@ -144,6 +154,9 @@ def extract_parameters_llm(query: str, message_type: str) -> dict:
         
         elif message_type == "get_google_flights":
             system_prompt = """Extract the departure and arrival airport codes from the user query, (i.e. "flights from LA to SF" -> departure_airport_code: LAX, arrival_airport_code: SFO)"""
+        
+        elif message_type == "get_google_hotels":
+            system_prompt = """Extract the location, check-in date, and check-out date from the user query, (i.e. "hotel in San Diego" -> location: San Diego, check_in_date: 2025-08-19, check_out_date: 2025-08-20)"""
         else:
             system_prompt = """Extract any relevant parameters from the user query."""
         
@@ -177,6 +190,7 @@ def classify_user_query(state: State) -> State:
     - yelp_search_activities: The user is asking for a restaurant, cafe, or other activity recommendation.
     - create_calendar_event: The user wants to create a calendar event, schedule something, or add an event to their calendar.
     - get_google_flights: The user is asking for flight information.
+    - get_google_hotels: The user is asking for hotel information.
     - default_llm_response: The user is asking a question that doesn't fit into any of the other categories.
     """
 
@@ -737,6 +751,102 @@ def get_google_flights(state: State) -> State:
                 "flight_results": f"Failed to get flights: {str(e)}"
             }
         }
+# get google hotels
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the hotel results
+def get_google_hotels(state: State) -> State:
+    """Get the best hotels for the user using extracted location parameters"""
+    query = state["messages"][-1].content
+    generate_params = llm_fast.with_structured_output(HotelState)
+    system_prompt = """Fill in the hotel parameters for the user's query. 
+    Required fields: location, check_in_date, check_out_date
+    Optional fields: query, min_price, max_price, num_adults, sort_by
+    If user query doesn't provide enough information, use reasonable defaults.
+
+    EVERYTHING MUST BE UPPERCASE
+    """
+    hotel_params = generate_params.invoke([SystemMessage(content=system_prompt), HumanMessage(content=query)])
+    tool_name = "GoogleHotels.SearchHotels"
+    converted_params = hotel_params.model_dump()
+
+    logging.info(f"[GOOGLE HOTELS] Generated HotelState: {converted_params}")
+    try:
+        tool_input = {
+            "location": converted_params.get("location", "San Diego"),
+            "check_in_date": converted_params.get("check_in_date", "2025-08-19"),
+            "check_out_date": converted_params.get("check_out_date", "2025-08-20"),
+        }
+
+        # add optional parameters if they are provided
+        if converted_params.get("query"):
+            tool_input["query"] = converted_params.get("query")
+        if converted_params.get("min_price"):
+            tool_input["min_price"] = converted_params.get("min_price")
+        if converted_params.get("max_price"):
+            tool_input["max_price"] = converted_params.get("max_price")
+        if converted_params.get("num_adults"):
+            tool_input["num_adults"] = converted_params.get("num_adults")
+        if converted_params.get("sort_by"):
+            tool_input["sort_by"] = converted_params.get("sort_by")
+
+        response = client.tools.execute(
+            tool_name=tool_name,
+            input=tool_input,
+            user_id=user_id
+        )
+
+        results = response.output.value
+        filtered_results = []
+        if results:
+            for result in results['properties']:
+                name = result["name"]
+                description = result.get("description", "")  # Use .get() with default
+                essential_info = result.get("essential_info", [])  # Use .get() with default
+                nearby_places = result["nearby_places"]
+                amenities = result["amenities"]
+                check_in_time = result["check_in_time"]
+                check_out_time = result["check_out_time"]
+                link = result.get("link", "")  # Use .get() with default
+                overall_rating = result["overall_rating"]
+                num_reviews = result["reviews"]
+                rate_per_night = result["rate_per_night"]
+                rate_info = rate_per_night.get("lowest", "")
+                total_rate = result.get("total_rate", {}).get("lowest", "")
+
+                filtered_results.append({
+                    "name": name,
+                    "description": description,
+                    "essential_info": essential_info,
+                    "nearby_places": nearby_places,
+                    "amenities": amenities,
+                    "check_in_time": check_in_time,
+                    "check_out_time": check_out_time,
+                    "link": link,
+                    "overall_rating": overall_rating,
+                    "num_reviews": num_reviews,
+                    "rate_per_night": rate_per_night,
+                    "rate_info": rate_info,
+                    "total_rate": total_rate
+                })
+        logging.info(f"[GOOGLE HOTELS] Tool execution response: {response}")
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "hotel_results": filtered_results
+            }
+        }
+    except Exception as e:
+        logging.error(f"[GOOGLE HOTELS] Error: {str(e)}")
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "hotel_results": f"Failed to get hotels: {str(e)}"
+            }
+        }
 
 # search engine fallback for user query
 # Parameters:
@@ -767,6 +877,7 @@ graph.add_node("yelp_search_activities", yelp_search_activities)
 graph.add_node("search_web", search_web)
 graph.add_node("create_calendar_event", query_google_calendar)
 graph.add_node("get_google_flights", get_google_flights)
+graph.add_node("get_google_hotels", get_google_hotels)
 
 # add edges
 graph.add_edge(START, "classify_user_query")
@@ -779,6 +890,7 @@ graph.add_conditional_edges("classify_user_query",
         "yelp_search_activities": "yelp_search_activities",
         "create_calendar_event": "create_calendar_event",
         "get_google_flights": "get_google_flights",
+        "get_google_hotels": "get_google_hotels",
         "default_llm_response": "default_llm_response"
     }
 )
@@ -790,6 +902,7 @@ graph.add_edge("get_weather", "default_llm_response")
 graph.add_edge("yelp_search_activities", "default_llm_response")
 graph.add_edge("create_calendar_event", END)
 graph.add_edge("get_google_flights", END)
+graph.add_edge("get_google_hotels", END)
 graph.add_edge("default_llm_response", END)
 
 
