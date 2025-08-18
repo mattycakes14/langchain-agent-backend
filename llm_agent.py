@@ -101,6 +101,11 @@ class HotelState(BaseModel):
     num_adults: int = Field(description="The number of adults on the hotel")
     sort_by: str = Field(description="The sort order of the hotels (RELEVANCE, LOWEST_PRICE, HIGHEST_RATING, MOST_REVIEWED)")
 
+# Spotify state model
+class SpotifyState(BaseModel):
+    track_name: str = Field(description="The name of the track to play")
+    artist_name: str = Field(description="The name of the artist of the track to play")
+
 llm_main = init_chat_model(
     model="gpt-4o-mini",
     base_url="https://openrouter.ai/api/v1",
@@ -344,6 +349,61 @@ def search_songs(state: State) -> State:
             "result": {"error": f"Error searching songs: {str(e)}"}
         }
 
+def spotify_play_track(state: State) -> State:
+    """Play a track on Spotify"""
+    song_rec = state.get("result", {}).get("song_recommendation", {})
+    artists = song_rec.get("artists", "")
+    title = song_rec.get("title", "")
+
+    logging.info("[SPOTIFY PLAY TRACK] Playing track: " + title + " by " + artists)
+
+    tool_name = "Spotify.PlayTrackByName"
+
+    auth_response = client.auth.start(
+        user_id=user_id,
+        provider="spotify",
+        scopes=["user-read-playback-state", "user-modify-playback-state"]
+    )
+
+    if auth_response.status != "completed":
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "error": f"Failed to authorize Spotify tool. Please authorize the tool in the browser and try again. {auth_response.url}"
+            }
+        }
+
+    auth_response = client.auth.wait_for_completion(auth_response)
+    
+    # get access token
+    access_token = auth_response.context.token
+
+    tool_input = {
+        "track_name": title,
+        "artist_name": artists
+    }
+    try:
+        response = client.tools.execute(
+        tool_name=tool_name,
+            input=tool_input,
+            user_id=user_id,
+        )
+
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "spotify_response": response
+            }
+        }
+    except Exception as e:
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {"error": f"Error playing track: {str(e)}"}
+        }
+    
 
 # search for events using TicketMaster API
 # Parameters:
@@ -878,7 +938,7 @@ graph.add_node("search_web", search_web)
 graph.add_node("create_calendar_event", query_google_calendar)
 graph.add_node("get_google_flights", get_google_flights)
 graph.add_node("get_google_hotels", get_google_hotels)
-
+graph.add_node("spotify_play_track", spotify_play_track)
 # add edges
 graph.add_edge(START, "classify_user_query")
 graph.add_conditional_edges("classify_user_query", 
@@ -895,8 +955,9 @@ graph.add_conditional_edges("classify_user_query",
     }
 )
 # graph.add_edge("classify_user_query", "search_web")
+graph.add_edge("song_rec", "spotify_play_track")
+graph.add_edge("spotify_play_track", END)
 graph.add_edge("search_web", "default_llm_response")
-graph.add_edge("song_rec", "default_llm_response")
 graph.add_edge("get_concerts", "default_llm_response") # temporary
 graph.add_edge("get_weather", "default_llm_response")
 graph.add_edge("yelp_search_activities", "default_llm_response")
