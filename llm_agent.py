@@ -23,13 +23,19 @@ import random
 from concert_filters import festival_to_description
 from arcadepy import Arcade
 from langchain_arcade import ArcadeToolManager
-
+import praw
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
 
 
 load_dotenv()
 
+# reddit client
+reddit = praw.Reddit(
+    client_id=os.getenv("REDDIT_CLIENT_ID"),
+    client_secret=os.getenv("REDDIT_SECRET"),
+    user_agent=os.getenv("REDDIT_USER_AGENT")
+)
 # arcade client
 client = Arcade(api_key=os.getenv("ARCADE_API_KEY"))
 manager = ArcadeToolManager(api_key=os.getenv("ARCADE_API_KEY"))
@@ -71,7 +77,7 @@ class State(TypedDict):
 
 # Classify user query
 class MessageClassifier(BaseModel):
-    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights", "get_google_hotels", "write_to_google_docs"] = Field(
+    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights", "get_google_hotels", "write_to_google_docs", "search_reddit_forums"] = Field(
         description="The type of message the user is sending")
 
 # Calendar state model
@@ -171,6 +177,9 @@ def extract_parameters_llm(query: str, message_type: str) -> dict:
         elif message_type == "write_to_google_docs":
             system_prompt = """Extract the title and text content from the user query, (i.e. "write a document about my trip to San Diego" -> title: My Trip to San Diego, text_content: I had a great time in San Diego!)"""
         
+        elif message_type == "search_reddit_forums":
+            system_prompt = """Extract the subreddit from the user query, (i.e. "search reddit for the best restaurants in San Diego" -> subreddit: r/SanDiego)"""
+        
         else:
             system_prompt = """Extract any relevant parameters from the user query."""
         
@@ -205,6 +214,9 @@ def classify_user_query(state: State) -> State:
     - create_calendar_event: The user wants to create a calendar event, schedule something, or add an event to their calendar.
     - get_google_flights: The user is asking for flight information.
     - get_google_hotels: The user is asking for hotel information.
+    - write_to_google_docs: The user is asking to write to a google doc.
+    - search_reddit_forums: The user is asking to search the reddit forums.
+    - post_to_reddit: The user is asking to post to the reddit forums.
     - default_llm_response: The user is asking a question that doesn't fit into any of the other categories.
     """
 
@@ -979,6 +991,54 @@ def write_to_google_docs(state: State) -> State:
         }
     }
 
+# search reddit forums
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the reddit forums results
+def search_reddit_forums(state: State) -> State:
+    """Search the reddit forums for the user query"""
+    keyword_search = llm_main.invoke([SystemMessage(content="Exctract main keyword from the user query for searching posts within subreddit."), HumanMessage(content=state["messages"][-1].content)])
+    search = keyword_search.content
+    try:
+        # Initialize Reddit client with proper error handling
+        reddit_client = praw.Reddit(
+            client_id=os.getenv("REDDIT_CLIENT_ID"),
+            client_secret=os.getenv("REDDIT_SECRET"),
+            user_agent=os.getenv("REDDIT_USER_AGENT")
+        )
+        
+        subreddit_name = "ravExchange"
+        subreddit = reddit_client.subreddit(subreddit_name)
+        results = []
+
+        for post in subreddit.search(search, limit=5):
+            results.append({
+                "title": post.title,
+                "url": post.url,
+                "score": post.score,
+                "num_comments": post.num_comments,
+                "author": str(post.author) if post.author else "Unknown",
+            })
+
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "reddit_results": results
+            }
+        }
+        
+    except Exception as e:
+        logging.error(f"Reddit search error: {e}")
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "error": f"Reddit search failed: {str(e)}"
+            }
+        }
+
 # search engine fallback for user query
 # Parameters:
 # state: State - The current state of the graph
@@ -1011,6 +1071,7 @@ graph.add_node("get_google_flights", get_google_flights)
 graph.add_node("get_google_hotels", get_google_hotels)
 graph.add_node("spotify_play_track", spotify_play_track)
 graph.add_node("write_to_google_docs", write_to_google_docs)
+graph.add_node("search_reddit_forums", search_reddit_forums)
 # add edges
 graph.add_edge(START, "classify_user_query")
 graph.add_conditional_edges("classify_user_query", 
@@ -1024,10 +1085,12 @@ graph.add_conditional_edges("classify_user_query",
         "get_google_flights": "get_google_flights",
         "get_google_hotels": "get_google_hotels",
         "default_llm_response": "default_llm_response",
-        "write_to_google_docs": "write_to_google_docs"
+        "write_to_google_docs": "write_to_google_docs",
+        "search_reddit_forums": "search_reddit_forums"
     }
 )
 # graph.add_edge("classify_user_query", "search_web")
+graph.add_edge("search_reddit_forums", END)
 graph.add_edge("write_to_google_docs", END)
 graph.add_edge("song_rec", "spotify_play_track")
 graph.add_edge("spotify_play_track", END)
