@@ -71,7 +71,7 @@ class State(TypedDict):
 
 # Classify user query
 class MessageClassifier(BaseModel):
-    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights", "get_google_hotels"] = Field(
+    message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights", "get_google_hotels", "write_to_google_docs"] = Field(
         description="The type of message the user is sending")
 
 # Calendar state model
@@ -105,6 +105,11 @@ class HotelState(BaseModel):
 class SpotifyState(BaseModel):
     track_name: str = Field(description="The name of the track to play")
     artist_name: str = Field(description="The name of the artist of the track to play")
+
+#Google Docs state model
+class GoogleDocsState(BaseModel):
+    title: str = Field(description="The title of the document")
+    text_content: str = Field(description="The text content of the document")
 
 llm_main = init_chat_model(
     model="gpt-4o-mini",
@@ -162,6 +167,10 @@ def extract_parameters_llm(query: str, message_type: str) -> dict:
         
         elif message_type == "get_google_hotels":
             system_prompt = """Extract the location, check-in date, and check-out date from the user query, (i.e. "hotel in San Diego" -> location: San Diego, check_in_date: 2025-08-19, check_out_date: 2025-08-20)"""
+        
+        elif message_type == "write_to_google_docs":
+            system_prompt = """Extract the title and text content from the user query, (i.e. "write a document about my trip to San Diego" -> title: My Trip to San Diego, text_content: I had a great time in San Diego!)"""
+        
         else:
             system_prompt = """Extract any relevant parameters from the user query."""
         
@@ -811,6 +820,7 @@ def get_google_flights(state: State) -> State:
                 "flight_results": f"Failed to get flights: {str(e)}"
             }
         }
+
 # get google hotels
 # Parameters:
 # state: State - The current state of the graph
@@ -908,6 +918,67 @@ def get_google_hotels(state: State) -> State:
             }
         }
 
+# write into google docs
+# Parameters:
+# state: State - The current state of the graph
+# Returns:
+# State - The updated state with the google docs results
+def write_to_google_docs(state: State) -> State:
+    """Write the user query to a google doc"""
+    logging.info("[GOOGLE DOCS] Writing the user query to a google doc")
+    
+    tool_name = "GoogleDocs.CreateDocumentFromText"
+    system_prompt = """You are a 21-year-old SoCal ABG bestie who's also a writing assistant. You help users create and edit documents in Google Docs with your signature playful, slangy, emoji-filled tone while being genuinely helpful.
+        Your writing specialties include:
+        - Travel itineraries and trip planning
+        - Meeting notes and summaries
+        - Creative writing and brainstorming
+        - Academic writing and research notes
+        - Personal journaling and reflections
+        - Work documents and presentations
+        - Social media content and captions
+        """
+    params = llm_fast.with_structured_output(GoogleDocsState)
+    result = params.invoke([SystemMessage(content=system_prompt), HumanMessage(content=state["messages"][-1].content)])
+    result_dict = result.model_dump()
+
+    tool_input = {
+        "title": result_dict.get("title", "Untitled"),
+        "text_content": result_dict.get("text_content", "No content provided")
+    }
+
+    auth_response = client.tools.authorize(
+        tool_name=tool_name,
+        user_id=user_id
+    )
+
+    if hasattr(auth_response, 'url') and auth_response.url:
+        logging.info(f"[GOOGLE DOCS] Authorization required: {auth_response.url}")
+        return {
+            "messages": state["messages"],
+            "message_type": state.get("message_type"),
+            "result": {
+                "document_results": f"Please authorize Google Docs access: {auth_response.url}"
+            }
+        }
+
+    client.auth.wait_for_completion(auth_response)
+
+    response = client.tools.execute(
+        tool_name=tool_name,
+        input=tool_input,
+        user_id=user_id
+    )
+
+    logging.info(f"[GOOGLE DOCS] Tool execution response: {response}")
+    return {
+        "messages": state["messages"],
+        "message_type": state.get("message_type"),
+        "result": {
+            "document_results": result
+        }
+    }
+
 # search engine fallback for user query
 # Parameters:
 # state: State - The current state of the graph
@@ -939,6 +1010,7 @@ graph.add_node("create_calendar_event", query_google_calendar)
 graph.add_node("get_google_flights", get_google_flights)
 graph.add_node("get_google_hotels", get_google_hotels)
 graph.add_node("spotify_play_track", spotify_play_track)
+graph.add_node("write_to_google_docs", write_to_google_docs)
 # add edges
 graph.add_edge(START, "classify_user_query")
 graph.add_conditional_edges("classify_user_query", 
@@ -951,10 +1023,12 @@ graph.add_conditional_edges("classify_user_query",
         "create_calendar_event": "create_calendar_event",
         "get_google_flights": "get_google_flights",
         "get_google_hotels": "get_google_hotels",
-        "default_llm_response": "default_llm_response"
+        "default_llm_response": "default_llm_response",
+        "write_to_google_docs": "write_to_google_docs"
     }
 )
 # graph.add_edge("classify_user_query", "search_web")
+graph.add_edge("write_to_google_docs", END)
 graph.add_edge("song_rec", "spotify_play_track")
 graph.add_edge("spotify_play_track", END)
 graph.add_edge("search_web", "default_llm_response")
