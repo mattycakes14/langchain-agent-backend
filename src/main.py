@@ -4,9 +4,16 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import os
 import requests
-from llm_agent import compiled_graph
+from graph.graph_builder import compiled_graph
 from langchain_core.messages import HumanMessage
 import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 load_dotenv()
 
 # initialize FastAPI app
@@ -40,6 +47,7 @@ def handle_prompt(request: PromptRequest):
     user_query = request.prompt
     user_id = request.user_id
 
+    logging.info(f"[QUERY] Received query: {user_query}")
     result = compiled_graph.invoke({"messages": [HumanMessage(content=user_query)]})
     logging.info("[FINAL RESULT]: " + str(result))
     return result
