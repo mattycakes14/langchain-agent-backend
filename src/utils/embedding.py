@@ -2,12 +2,12 @@ from langchain_openai import OpenAIEmbeddings
 import openai
 import os
 from dotenv import load_dotenv
-from config.settings import OPENROUTER_API_KEY
+from config.settings import OPENAI_API_KEY
 
 load_dotenv()
 
 # Set up OpenAI API key - use OpenRouter for chat, regular OpenAI for embeddings
-if OPENROUTER_API_KEY:
+if OPENAI_API_KEY:
     # For embeddings, we need to use regular OpenAI API
     openai.api_key = os.getenv("OPENAI_API_KEY")
 else:
