@@ -72,7 +72,7 @@ def handle_auth(request: dict):
         for integration in user_integrations.data:
             if integration.get("status") == "pending":
                 hasPendingStatus = True
-                pending_services.append(integration.get("service"))
+                pending_services.append(integration.get("service_name"))
         
         if hasPendingStatus:
             return {"status": "pending", "pending_services": pending_services}
