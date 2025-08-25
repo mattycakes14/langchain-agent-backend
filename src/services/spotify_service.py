@@ -28,26 +28,6 @@ def spotify_play_track(state: State) -> State:
 
     tool_name = "Spotify.PlayTrackByName"
     
-    auth_response = client.auth.start(
-        user_id=user_id,
-        provider="spotify",
-        scopes=["user-read-playback-state", "user-modify-playback-state"]
-    )
-
-    if auth_response.status != "completed":
-        return {
-            "messages": state["messages"],
-            "message_type": state.get("message_type"),
-            "result": {
-                "error": f"Failed to authorize Spotify tool. Please authorize the tool in the browser and try again. {auth_response.url}"
-            }
-        }
-
-    auth_response = client.auth.wait_for_completion(auth_response)
-    
-    # get access token
-    access_token = auth_response.context.token
-
     tool_input = {
         "track_name": title,
         "artist_name": artists

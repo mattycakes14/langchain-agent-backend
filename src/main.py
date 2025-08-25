@@ -51,36 +51,272 @@ class PromptRequest(BaseModel):
 def health_check():
     return {"message": "OK"}
 
-# POST /auth
+# POST /auth/userintegrations
 @app.post("/auth/userintegrations")
 def handle_auth(request: dict):
     """
-    Handle authentication for various services using Arcade client before query processing.
-    This replaces the auth logic that was previously handled by Arcade AI during tool execution.
+    Check the status of all user integrations
     """
     user_id = request.get("user_id")
-    # fetch the status of user integrations
+    
+    if not user_id:
+        return {"error": "Missing user_id", "status": "error"}
+    
     try:
         # fetch the user integrations
         user_integrations = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).execute()
-        logging.info("[AUTH] User integrations: " + str(user_integrations))
+        logging.info(f"[AUTH] User integrations for {user_id}: {user_integrations.data}")
 
+        pending_services = []
         hasPendingStatus = False
         for integration in user_integrations.data:
             if integration.get("status") == "pending":
                 hasPendingStatus = True
-                break
+                pending_services.append(integration.get("service"))
         
         if hasPendingStatus:
-            return {"status": "pending"}
+            return {"status": "pending", "pending_services": pending_services}
         else:
             return {"status": "completed"}
         
     except Exception as e:
-        logging.error("[AUTH] Error fetching user integrations: " + str(e))
-        return {"error": "Error fetching user integrations"}
+        logging.error(f"[AUTH] Error fetching user integrations: {str(e)}")
+        return {"error": "Error fetching user integrations", "status": "error"}
 
+@app.post("/auth/userintegrations/spotify")
+def handle_spotify_auth(request: dict):
+    user_id = request.get("user_id")
     
+    if not user_id:
+        return {"error": "Missing user_id", "status": "error"}
+    
+    try:
+        # Check if integration already exists
+        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service", "spotify").execute()
+        
+        if existing.data and existing.data[0].get("status") == "completed":
+            return {"status": "already_authenticated", "message": "Spotify already connected"}
+        
+        # Start auth flow
+        auth_response = client.auth.start(
+            user_id=user_id,
+            provider="spotify",
+            scopes=["user-read-playback-state", "user-modify-playback-state"]
+        )
+        
+        # Create or update integration record
+        integration_data = {
+            "user_id": user_id,
+            "service": "spotify",
+            "status": "pending",
+            "auth_id": auth_response.id
+        }
+        
+        if existing.data:
+            # Update existing record
+            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service", "spotify").execute()
+        else:
+            # Create new record
+            supabase_client.table("user_integrations").insert(integration_data).execute()
+        
+        return {
+            "status": "pending",
+            "auth_url": auth_response.url,
+            "auth_id": auth_response.id
+        }
+        
+    except Exception as e:
+        logging.error(f"[SPOTIFY AUTH] Error: {str(e)}")
+        return {"error": f"Failed to start Spotify auth: {str(e)}", "status": "error"}
+
+@app.post("/auth/userintegrations/spotify/callback")
+def handle_spotify_callback(request: dict):
+    auth_id = request.get("auth_id")
+    user_id = request.get("user_id")
+    
+    if not auth_id or not user_id:
+        return {"error": "Missing auth_id or user_id", "status": "error"}
+    
+    try:
+        # Wait for auth completion
+        auth_response = client.auth.wait_for_completion(auth_id)
+        
+        if auth_response.status == "completed":
+            # Update integration with completed status and token
+            supabase_client.table("user_integrations").update({
+                "status": "completed",
+                "access_token": auth_response.context.token,
+                "auth_id": None  # Clear auth_id since completed
+            }).eq("user_id", user_id).eq("service", "spotify").execute()
+            
+            return {"status": "completed", "message": "Spotify connected successfully"}
+        else:
+            # Update status to failed
+            supabase_client.table("user_integrations").update({
+                "status": "failed",
+                "auth_id": None
+            }).eq("user_id", user_id).eq("service", "spotify").execute()
+            
+            return {"status": "failed", "error": "Authentication failed"}
+            
+    except Exception as e:
+        logging.error(f"[SPOTIFY CALLBACK] Error: {str(e)}")
+        return {"error": f"Failed to complete Spotify auth: {str(e)}", "status": "error"}
+
+@app.post("/auth/userintegrations/googlecalendar")
+def handle_google_calendar_auth(request: dict):
+    user_id = request.get("user_id")
+    
+    if not user_id:
+        return {"error": "Missing user_id", "status": "error"}
+    
+    try:
+        # Check if integration already exists
+        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service", "google_calendar").execute()
+        
+        if existing.data and existing.data[0].get("status") == "completed":
+            return {"status": "already_authenticated", "message": "Google Calendar already connected"}
+        
+        # Start auth flow
+        auth_response = client.auth.start(
+            user_id=user_id,
+            tool_name="GoogleCalendar.CreateEvent"
+        )
+        
+        # Create or update integration record
+        integration_data = {
+            "user_id": user_id,
+            "service": "google_calendar",
+            "status": "pending",
+            "auth_id": auth_response.id
+        }
+        
+        if existing.data:
+            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service", "google_calendar").execute()
+        else:
+            supabase_client.table("user_integrations").insert(integration_data).execute()
+        
+        return {
+            "status": "pending",
+            "auth_url": auth_response.url,
+            "auth_id": auth_response.id
+        }
+        
+    except Exception as e:
+        logging.error(f"[GOOGLE CALENDAR AUTH] Error: {str(e)}")
+        return {"error": f"Failed to start Google Calendar auth: {str(e)}", "status": "error"}
+
+@app.post("/auth/userintegrations/googledocs")
+def handle_google_docs_auth(request: dict):
+    user_id = request.get("user_id")
+    
+    if not user_id:
+        return {"error": "Missing user_id", "status": "error"}
+    
+    try:
+        # Check if integration already exists
+        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service", "google_docs").execute()
+        
+        if existing.data and existing.data[0].get("status") == "completed":
+            return {"status": "already_authenticated", "message": "Google Docs already connected"}
+        
+        # Start auth flow
+        auth_response = client.auth.start(
+            user_id=user_id,
+            tool_name="GoogleDocs.CreateDocumentFromText"
+        )
+        
+        # Create or update integration record
+        integration_data = {
+            "user_id": user_id,
+            "service": "google_docs",
+            "status": "pending",
+            "auth_id": auth_response.id
+        }
+        
+        if existing.data:
+            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service", "google_docs").execute()
+        else:
+            supabase_client.table("user_integrations").insert(integration_data).execute()
+        
+        return {
+            "status": "pending",
+            "auth_url": auth_response.url,
+            "auth_id": auth_response.id
+        }
+        
+    except Exception as e:
+        logging.error(f"[GOOGLE DOCS AUTH] Error: {str(e)}")
+        return {"error": f"Failed to start Google Docs auth: {str(e)}", "status": "error"}
+
+@app.post("/auth/userintegrations/googlecalendar/callback")
+def handle_google_calendar_callback(request: dict):
+    auth_id = request.get("auth_id")
+    user_id = request.get("user_id")
+    
+    if not auth_id or not user_id:
+        return {"error": "Missing auth_id or user_id", "status": "error"}
+    
+    try:
+        # Wait for auth completion
+        auth_response = client.auth.wait_for_completion(auth_id)
+        
+        if auth_response.status == "completed":
+            # Update integration with completed status and token
+            supabase_client.table("user_integrations").update({
+                "status": "completed",
+                "access_token": auth_response.context.token,
+                "auth_id": None
+            }).eq("user_id", user_id).eq("service", "google_calendar").execute()
+            
+            return {"status": "completed", "message": "Google Calendar connected successfully"}
+        else:
+            # Update status to failed
+            supabase_client.table("user_integrations").update({
+                "status": "failed",
+                "auth_id": None
+            }).eq("user_id", user_id).eq("service", "google_calendar").execute()
+            
+            return {"status": "failed", "error": "Authentication failed"}
+            
+    except Exception as e:
+        logging.error(f"[GOOGLE CALENDAR CALLBACK] Error: {str(e)}")
+        return {"error": f"Failed to complete Google Calendar auth: {str(e)}", "status": "error"}
+
+@app.post("/auth/userintegrations/googledocs/callback")
+def handle_google_docs_callback(request: dict):
+    auth_id = request.get("auth_id")
+    user_id = request.get("user_id")
+    
+    if not auth_id or not user_id:
+        return {"error": "Missing auth_id or user_id", "status": "error"}
+    
+    try:
+        # Wait for auth completion
+        auth_response = client.auth.wait_for_completion(auth_id)
+        
+        if auth_response.status == "completed":
+            # Update integration with completed status and token
+            supabase_client.table("user_integrations").update({
+                "status": "completed",
+                "access_token": auth_response.context.token,
+                "auth_id": None
+            }).eq("user_id", user_id).eq("service", "google_docs").execute()
+            
+            return {"status": "completed", "message": "Google Docs connected successfully"}
+        else:
+            # Update status to failed
+            supabase_client.table("user_integrations").update({
+                "status": "failed",
+                "auth_id": None
+            }).eq("user_id", user_id).eq("service", "google_docs").execute()
+            
+            return {"status": "failed", "error": "Authentication failed"}
+            
+    except Exception as e:
+        logging.error(f"[GOOGLE DOCS CALLBACK] Error: {str(e)}")
+        return {"error": f"Failed to complete Google Docs auth: {str(e)}", "status": "error"}
+
 # POST /query
 @app.post("/query")
 def handle_prompt(request: PromptRequest):

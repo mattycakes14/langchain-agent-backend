@@ -47,30 +47,8 @@ def query_google_calendar(state: State) -> State:
         
         logging.info(f"[GOOGLE CALENDAR] Generated event params: {result_dict}")
         
-
-        
         tool_name = "GoogleCalendar.CreateEvent"
         logging.info(f"[GOOGLE CALENDAR] Using tool: {tool_name}")
-        
-        # Authorize user
-        auth_response = client.tools.authorize(
-            user_id=user_id,
-            tool_name=tool_name
-        )
-        
-        # Check if authorization is needed
-        if hasattr(auth_response, 'url') and auth_response.url:
-            logging.info(f"[GOOGLE CALENDAR] Authorization required: {auth_response.url}")
-            return {
-                "messages": state["messages"],
-                "message_type": state.get("message_type"),
-                "result": {
-                    "calendar_results": f"Please authorize Google Calendar access: {auth_response.url}"
-                }
-            }
-        
-        # Wait for authorization completion
-        client.auth.wait_for_completion(auth_response)
         
         # prepare input for tool from pydantic model
         tool_input = {k: result_dict.get(k) for k in [
