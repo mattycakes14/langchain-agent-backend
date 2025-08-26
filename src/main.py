@@ -92,35 +92,33 @@ def handle_spotify_auth(request: dict):
     
     try:
         # Check if integration already exists
-        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service", "spotify").execute()
+        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service_name", "spotify").execute()
         
         if existing.data and existing.data[0].get("status") == "completed":
             return {"status": "already_authenticated", "message": "Spotify already connected"}
         
         # Start auth flow
-        auth_response = client.auth.start(
+        auth_response = client.tools.authorize(
+            tool_name="Spotify.PlayTrackByName",
             user_id=user_id,
-            provider="spotify",
-            scopes=["user-read-playback-state", "user-modify-playback-state"]
         )
-        
-        # Create or update integration record
+
         integration_data = {
             "user_id": user_id,
-            "service": "spotify",
-            "status": "pending",
+            "service_name": "spotify",
+            "status": "url_sent",
             "auth_id": auth_response.id
         }
-        
+
         if existing.data:
             # Update existing record
-            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service", "spotify").execute()
+            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service_name", "spotify").execute()
         else:
             # Create new record
             supabase_client.table("user_integrations").insert(integration_data).execute()
         
         return {
-            "status": "pending",
+            "status": "url_sent",
             "auth_url": auth_response.url,
             "auth_id": auth_response.id
         }
@@ -147,7 +145,7 @@ def handle_spotify_callback(request: dict):
                 "status": "completed",
                 "access_token": auth_response.context.token,
                 "auth_id": None  # Clear auth_id since completed
-            }).eq("user_id", user_id).eq("service", "spotify").execute()
+            }).eq("user_id", user_id).eq("service_name", "spotify").execute()
             
             return {"status": "completed", "message": "Spotify connected successfully"}
         else:
@@ -155,7 +153,7 @@ def handle_spotify_callback(request: dict):
             supabase_client.table("user_integrations").update({
                 "status": "failed",
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service", "spotify").execute()
+            }).eq("user_id", user_id).eq("service_name", "spotify").execute()
             
             return {"status": "failed", "error": "Authentication failed"}
             
@@ -172,32 +170,32 @@ def handle_google_calendar_auth(request: dict):
     
     try:
         # Check if integration already exists
-        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service", "google_calendar").execute()
+        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service_name", "google_calendar").execute()
         
         if existing.data and existing.data[0].get("status") == "completed":
             return {"status": "already_authenticated", "message": "Google Calendar already connected"}
         
         # Start auth flow
-        auth_response = client.auth.start(
+        auth_response = client.tools.authorize(
+            tool_name="GoogleCalendar.CreateEvent",
             user_id=user_id,
-            tool_name="GoogleCalendar.CreateEvent"
         )
         
         # Create or update integration record
         integration_data = {
             "user_id": user_id,
-            "service": "google_calendar",
-            "status": "pending",
+            "service_name": "google_calendar",
+            "status": "url_sent",
             "auth_id": auth_response.id
         }
         
         if existing.data:
-            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service", "google_calendar").execute()
+            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service_name", "google_calendar").execute()
         else:
             supabase_client.table("user_integrations").insert(integration_data).execute()
         
         return {
-            "status": "pending",
+            "status": "url_sent",
             "auth_url": auth_response.url,
             "auth_id": auth_response.id
         }
@@ -215,32 +213,32 @@ def handle_google_docs_auth(request: dict):
     
     try:
         # Check if integration already exists
-        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service", "google_docs").execute()
+        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service_name", "google_docs").execute()
         
         if existing.data and existing.data[0].get("status") == "completed":
             return {"status": "already_authenticated", "message": "Google Docs already connected"}
         
         # Start auth flow
-        auth_response = client.auth.start(
+        auth_response = client.tools.authorize(
+            tool_name="GoogleDocs.CreateDocumentFromText",
             user_id=user_id,
-            tool_name="GoogleDocs.CreateDocumentFromText"
         )
         
         # Create or update integration record
         integration_data = {
             "user_id": user_id,
-            "service": "google_docs",
-            "status": "pending",
+            "service_name": "google_docs",
+            "status": "url_sent",
             "auth_id": auth_response.id
         }
         
         if existing.data:
-            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service", "google_docs").execute()
+            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service_name", "google_docs").execute()
         else:
             supabase_client.table("user_integrations").insert(integration_data).execute()
         
         return {
-            "status": "pending",
+            "status": "url_sent",
             "auth_url": auth_response.url,
             "auth_id": auth_response.id
         }
@@ -267,7 +265,7 @@ def handle_google_calendar_callback(request: dict):
                 "status": "completed",
                 "access_token": auth_response.context.token,
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service", "google_calendar").execute()
+            }).eq("user_id", user_id).eq("service_name", "google_calendar").execute()
             
             return {"status": "completed", "message": "Google Calendar connected successfully"}
         else:
@@ -275,7 +273,7 @@ def handle_google_calendar_callback(request: dict):
             supabase_client.table("user_integrations").update({
                 "status": "failed",
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service", "google_calendar").execute()
+            }).eq("user_id", user_id).eq("service_name", "google_calendar").execute()
             
             return {"status": "failed", "error": "Authentication failed"}
             
@@ -301,7 +299,7 @@ def handle_google_docs_callback(request: dict):
                 "status": "completed",
                 "access_token": auth_response.context.token,
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service", "google_docs").execute()
+            }).eq("user_id", user_id).eq("service_name", "google_docs").execute()
             
             return {"status": "completed", "message": "Google Docs connected successfully"}
         else:
@@ -309,7 +307,7 @@ def handle_google_docs_callback(request: dict):
             supabase_client.table("user_integrations").update({
                 "status": "failed",
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service", "google_docs").execute()
+            }).eq("user_id", user_id).eq("service_name", "google_docs").execute()
             
             return {"status": "failed", "error": "Authentication failed"}
             
