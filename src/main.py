@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -57,15 +58,14 @@ def handle_auth(request: dict):
     """
     Check the status of all user integrations
     """
-    user_id = request.get("user_id")
-    
-    if not user_id:
-        return {"error": "Missing user_id", "status": "error"}
+    email = request.get("email")
+    if not email:
+        return {"error": "Missing email", "status": "error"}
     
     try:
         # fetch the user integrations
-        user_integrations = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).execute()
-        logging.info(f"[AUTH] User integrations for {user_id}: {user_integrations.data}")
+        user_integrations = supabase_client.table("user_integrations").select("*").eq("email", email).execute()
+        logging.info(f"[AUTH] User integrations for {email}: {user_integrations.data}")
 
         pending_services = []
         hasPendingStatus = False
@@ -85,14 +85,14 @@ def handle_auth(request: dict):
 
 @app.post("/auth/userintegrations/spotify")
 def handle_spotify_auth(request: dict):
-    user_id = request.get("user_id")
+    email = request.get("email")
     
-    if not user_id:
-        return {"error": "Missing user_id", "status": "error"}
+    if not email:
+        return {"error": "Missing email", "status": "error"}
     
     try:
         # Check if integration already exists
-        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service_name", "spotify").execute()
+        existing = supabase_client.table("user_integrations").select("*").eq("email", email).eq("service_name", "spotify").execute()
         
         if existing.data and existing.data[0].get("status") == "completed":
             return {"status": "already_authenticated", "message": "Spotify already connected"}
@@ -100,11 +100,10 @@ def handle_spotify_auth(request: dict):
         # Start auth flow
         auth_response = client.tools.authorize(
             tool_name="Spotify.PlayTrackByName",
-            user_id=user_id,
+            user_id=email,
         )
 
         integration_data = {
-            "user_id": user_id,
             "service_name": "spotify",
             "status": "url_sent",
             "auth_id": auth_response.id
@@ -112,11 +111,12 @@ def handle_spotify_auth(request: dict):
 
         if existing.data:
             # Update existing record
-            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service_name", "spotify").execute()
+            supabase_client.table("user_integrations").update(integration_data).eq("email", email).eq("service_name", "spotify").execute()
         else:
+            logging.info(" [SPOTIFY AUTH] No existing record found, creating new one")
             # Create new record
             supabase_client.table("user_integrations").insert(integration_data).execute()
-        
+                
         return {
             "status": "url_sent",
             "auth_url": auth_response.url,
@@ -130,10 +130,10 @@ def handle_spotify_auth(request: dict):
 @app.post("/auth/userintegrations/spotify/callback")
 def handle_spotify_callback(request: dict):
     auth_id = request.get("auth_id")
-    user_id = request.get("user_id")
+    email = request.get("email")
     
-    if not auth_id or not user_id:
-        return {"error": "Missing auth_id or user_id", "status": "error"}
+    if not email:
+        return {"error": "Missing email", "status": "error"}
     
     try:
         # Wait for auth completion
@@ -143,9 +143,8 @@ def handle_spotify_callback(request: dict):
             # Update integration with completed status and token
             supabase_client.table("user_integrations").update({
                 "status": "completed",
-                "access_token": auth_response.context.token,
                 "auth_id": None  # Clear auth_id since completed
-            }).eq("user_id", user_id).eq("service_name", "spotify").execute()
+            }).eq("email", email).eq("service_name", "spotify").execute()
             
             return {"status": "completed", "message": "Spotify connected successfully"}
         else:
@@ -153,7 +152,7 @@ def handle_spotify_callback(request: dict):
             supabase_client.table("user_integrations").update({
                 "status": "failed",
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service_name", "spotify").execute()
+            }).eq("email", email).eq("service_name", "spotify").execute()
             
             return {"status": "failed", "error": "Authentication failed"}
             
@@ -163,14 +162,14 @@ def handle_spotify_callback(request: dict):
 
 @app.post("/auth/userintegrations/googlecalendar")
 def handle_google_calendar_auth(request: dict):
-    user_id = request.get("user_id")
-    
-    if not user_id:
-        return {"error": "Missing user_id", "status": "error"}
+    email = request.get("email")
+
+    if not email:
+        return {"error": "Missing email", "status": "error"}
     
     try:
         # Check if integration already exists
-        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service_name", "google_calendar").execute()
+        existing = supabase_client.table("user_integrations").select("*").eq("email", email).eq("service_name", "googlecalendar").execute()
         
         if existing.data and existing.data[0].get("status") == "completed":
             return {"status": "already_authenticated", "message": "Google Calendar already connected"}
@@ -178,20 +177,20 @@ def handle_google_calendar_auth(request: dict):
         # Start auth flow
         auth_response = client.tools.authorize(
             tool_name="GoogleCalendar.CreateEvent",
-            user_id=user_id,
+            user_id=email,
         )
         
         # Create or update integration record
         integration_data = {
-            "user_id": user_id,
-            "service_name": "google_calendar",
+            "service_name": "googlecalendar",
             "status": "url_sent",
             "auth_id": auth_response.id
         }
         
         if existing.data:
-            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service_name", "google_calendar").execute()
+            supabase_client.table("user_integrations").update(integration_data).eq("email", email).eq("service_name", "googlecalendar").execute()
         else:
+            logging.info(" [GOOGLE CALENDAR AUTH] No existing record found, creating new one")
             supabase_client.table("user_integrations").insert(integration_data).execute()
         
         return {
@@ -206,14 +205,14 @@ def handle_google_calendar_auth(request: dict):
 
 @app.post("/auth/userintegrations/googledocs")
 def handle_google_docs_auth(request: dict):
-    user_id = request.get("user_id")
+    email = request.get("email")
     
-    if not user_id:
-        return {"error": "Missing user_id", "status": "error"}
+    if not email:
+        return {"error": "Missing email", "status": "error"}
     
     try:
         # Check if integration already exists
-        existing = supabase_client.table("user_integrations").select("*").eq("user_id", user_id).eq("service_name", "google_docs").execute()
+        existing = supabase_client.table("user_integrations").select("*").eq("email", email).eq("service_name", "googledocs").execute()
         
         if existing.data and existing.data[0].get("status") == "completed":
             return {"status": "already_authenticated", "message": "Google Docs already connected"}
@@ -221,20 +220,20 @@ def handle_google_docs_auth(request: dict):
         # Start auth flow
         auth_response = client.tools.authorize(
             tool_name="GoogleDocs.CreateDocumentFromText",
-            user_id=user_id,
+            user_id=email,
         )
         
         # Create or update integration record
         integration_data = {
-            "user_id": user_id,
-            "service_name": "google_docs",
+            "service_name": "googledocs",
             "status": "url_sent",
             "auth_id": auth_response.id
         }
-        
+
         if existing.data:
-            supabase_client.table("user_integrations").update(integration_data).eq("user_id", user_id).eq("service_name", "google_docs").execute()
+            supabase_client.table("user_integrations").update(integration_data).eq("email", email).eq("service_name", "googledocs").execute()
         else:
+            logging.info(" [GOOGLE DOCS AUTH] No existing record found, creating new one")
             supabase_client.table("user_integrations").insert(integration_data).execute()
         
         return {
@@ -249,11 +248,11 @@ def handle_google_docs_auth(request: dict):
 
 @app.post("/auth/userintegrations/googlecalendar/callback")
 def handle_google_calendar_callback(request: dict):
+    email = request.get("email")
     auth_id = request.get("auth_id")
-    user_id = request.get("user_id")
-    
-    if not auth_id or not user_id:
-        return {"error": "Missing auth_id or user_id", "status": "error"}
+
+    if not email:
+        return {"error": "Missing email", "status": "error"}
     
     try:
         # Wait for auth completion
@@ -263,9 +262,8 @@ def handle_google_calendar_callback(request: dict):
             # Update integration with completed status and token
             supabase_client.table("user_integrations").update({
                 "status": "completed",
-                "access_token": auth_response.context.token,
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service_name", "google_calendar").execute()
+            }).eq("email", email).eq("service_name", "googlecalendar").execute()
             
             return {"status": "completed", "message": "Google Calendar connected successfully"}
         else:
@@ -273,7 +271,7 @@ def handle_google_calendar_callback(request: dict):
             supabase_client.table("user_integrations").update({
                 "status": "failed",
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service_name", "google_calendar").execute()
+            }).eq("email", email).eq("service_name", "googlecalendar").execute()
             
             return {"status": "failed", "error": "Authentication failed"}
             
@@ -283,11 +281,10 @@ def handle_google_calendar_callback(request: dict):
 
 @app.post("/auth/userintegrations/googledocs/callback")
 def handle_google_docs_callback(request: dict):
+    email = request.get("email")
     auth_id = request.get("auth_id")
-    user_id = request.get("user_id")
-    
-    if not auth_id or not user_id:
-        return {"error": "Missing auth_id or user_id", "status": "error"}
+    if not email:
+        return {"error": "Missing email", "status": "error"}
     
     try:
         # Wait for auth completion
@@ -297,9 +294,8 @@ def handle_google_docs_callback(request: dict):
             # Update integration with completed status and token
             supabase_client.table("user_integrations").update({
                 "status": "completed",
-                "access_token": auth_response.context.token,
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service_name", "google_docs").execute()
+            }).eq("email", email).eq("service_name", "googledocs").execute()
             
             return {"status": "completed", "message": "Google Docs connected successfully"}
         else:
@@ -307,7 +303,7 @@ def handle_google_docs_callback(request: dict):
             supabase_client.table("user_integrations").update({
                 "status": "failed",
                 "auth_id": None
-            }).eq("user_id", user_id).eq("service_name", "google_docs").execute()
+            }).eq("email", email).eq("service_name", "googledocs").execute()
             
             return {"status": "failed", "error": "Authentication failed"}
             
@@ -325,4 +321,3 @@ def handle_prompt(request: PromptRequest):
     result = compiled_graph.invoke({"messages": [HumanMessage(content=user_query)]})
     logging.info("[FINAL RESULT]: " + str(result))
     return result
-
