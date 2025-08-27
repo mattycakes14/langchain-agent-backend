@@ -39,6 +39,7 @@ def classify_user_query(state: State) -> State:
     ])
     logging.info(f"[CLASSIFYING MESSAGE] Classified message: {result.message_type}")
 
+    
     # Extract parameters using LLM
     extracted_params = extract_parameters_llm(message.content, result.message_type)
     

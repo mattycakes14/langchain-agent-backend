@@ -6,11 +6,13 @@ from dotenv import load_dotenv
 import os
 import requests
 from graph.graph_builder import compiled_graph
+from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.messages import HumanMessage
 import logging
 from arcadepy import Arcade
 import supabase
-
+from langgraph.types import Command
+from langgraph.errors import GraphInterrupt
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -22,6 +24,8 @@ load_dotenv()
 # initialize FastAPI app
 app = FastAPI()
 
+# initialize memory saver
+checkpointer = InMemorySaver()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -317,7 +321,19 @@ def handle_prompt(request: PromptRequest):
     user_query = request.prompt
     user_id = request.user_id
 
-    logging.info(f"[QUERY] Received query: {user_query}")
-    result = compiled_graph.invoke({"messages": [HumanMessage(content=user_query)]})
-    logging.info("[FINAL RESULT]: " + str(result))
+    logging.info(f"State snapshot: {compiled_graph.get_state(config={'configurable': {'thread_id': user_id}})}")
+    
+    if compiled_graph.get_state(config={'configurable': {'thread_id': user_id}}).next:
+        result = compiled_graph.invoke(
+            None,
+            config={"configurable": {"thread_id": user_id}},
+        )
+    else: 
+        result = compiled_graph.invoke(
+            {"messages": [HumanMessage(content=user_query)]},
+            config={"configurable": {"thread_id": user_id}},
+            interrupt_after=["song_rec"]
+        )
+
+        logging.info("[FINAL RESULT]: " + str(result))
     return result

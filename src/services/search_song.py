@@ -53,6 +53,7 @@ def search_songs(state: State) -> State:
         # Format the results properly
         if results.matches:
             song_info = results.matches[0].metadata
+
             return {
                 "messages": state["messages"],
                 "message_type": state.get("message_type"),
