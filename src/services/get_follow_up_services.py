@@ -1,38 +1,35 @@
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from models.state import MessageClassifier, State
-from services.extract_params import extract_parameters_llm
+from models.state import State
 import logging
-from config.settings import llm_fast
-from config.settings import llm_main
-from config.settings import llm_advanced
+
+# Rule-based follow-up services mapping
+FOLLOW_UP_RULES = {
+    "song_rec": ["spotify_play_track", "get_concerts", "create_calendar_event", "search_web"],
+    "get_concerts": ["create_calendar_event", "get_google_hotels", "yelp_search_activities", "song_rec"],
+    "get_weather": ["yelp_search_activities", "create_calendar_event", "get_google_flights"],
+    "yelp_search_activities": ["create_calendar_event", "get_weather", "get_google_hotels"],
+    "create_calendar_event": ["get_weather", "yelp_search_activities", "get_google_flights"],
+    "get_google_flights": ["get_google_hotels", "get_weather", "create_calendar_event"],
+    "get_google_hotels": ["yelp_search_activities", "get_weather", "create_calendar_event"],
+    "write_to_google_docs": ["search_web", "search_reddit_forums"],
+    "search_reddit_forums": ["write_to_google_docs", "search_web"],
+    "spotify_play_track": ["get_concerts", "create_calendar_event"],
+    "search_web": ["write_to_google_docs", "search_reddit_forums"],
+    "default_llm_response": ["search_web", "search_reddit_forums"]
+}
+
 def get_follow_up_services(state: State) -> State:
     # extract the message type
     message_type = state["message_type"]
-
-    system_prompt = f""" 
-    Given this message type: {message_type}, recommend follow up services to help the user THAT MAKES THE MOST SENSE.
-    The follow up services are:
-    - song_rec: get a song recommendation
-    - get_concerts: get a concert recommendation
-    - get_weather: get the weather
-    - yelp_search_activities: get a restaurant, cafe, or other activity recommendation
-    - create_calendar_event: create a calendar event, schedule something, or add an event to their calendar
-    - get_google_flights: get flight information
-    - get_google_hotels: get hotel information
-    - write_to_google_docs: write to a google doc
-    - search_reddit_forums: search the reddit forums
-    - spotify_play_track: play a song on spotify
-    - search_web: search the web
-    - default_llm_response: default llm response
-
-    The follow up services should be a list of services that make the most sense to help the user. (JUST RETURN THE LIST OF SERVICES, NO OTHER TEXT)
-    """
-    result = llm_main.invoke([
-        SystemMessage(content=system_prompt)
-    ])
-    logging.info(f"[GET FOLLOW UP SERVICES] Follow up services: {result.content}")
+    
+    # Get follow-up services based on rules (exclude the current service)
+    follow_up_services = FOLLOW_UP_RULES.get(message_type, ["search_web"])
+    
+    # Convert to the format expected by smartrouter
+    follow_up_list = [f'"{service}"' for service in follow_up_services]
+    follow_up_services_str = "[" + ",".join(follow_up_list) + "]"
+    
+    logging.info(f"[GET FOLLOW UP SERVICES] Follow up services: {follow_up_services_str}")
     return {
         "messages": state["messages"],
-        "follow_up_services": result.content
+        "follow_up_services": follow_up_services_str
     }

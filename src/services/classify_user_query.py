@@ -17,15 +17,13 @@ def classify_user_query(state: State) -> State:
     logging.info(f"[CLASSIFYING MESSAGE] latest message: {message}")
 
     # get the conversation history
-    conversation_history = get_conversation_window("matt1234")
-    logging.info(f"[Fetching conversation history] Conversation history: {conversation_history}")
-    
+    conversation_history = get_conversation_window("matt1234")    
     user_messages = conversation_history.get("user_messages", [])
     agent_result = conversation_history.get("agent_result", "")
 
     logging.info(f"[Fetching conversation history] User messages: {user_messages}")
+    logging.info(f"[Fetching conversation history] Agent result: {agent_result}")
     logging.info(f"[Fetching conversation history] Agent result length: {len(str(agent_result))} characters")
-    logging.info(f"[Fetching conversation history] Agent result preview: {str(agent_result)[:200]}...")
     prompt = f"""
         User messages: {str(user_messages)}
         Agent result: {str(agent_result)}
@@ -46,6 +44,8 @@ def classify_user_query(state: State) -> State:
     content = f"""
     You are a message classifier. Analyze the user's message and classify it into one of the specified types.
     The user's message is: {str(message)}
+    With conversation history: {str(related_messages.content)}
+
     The message types are:
     - song_rec: The user is asking for a song recommendation.
     - get_concerts: The user is asking for a concert recommendation.
