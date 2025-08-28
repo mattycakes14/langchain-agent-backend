@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 def smartrouter(state: State) -> State:
 
     logging.info(f"[SMARTROUTER] Initializing smartrouter")
-    
+
     # tooling result
     tooling_result = state.get("result", {})
     # get the follow up services (handle if it doesn't exist)

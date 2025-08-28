@@ -29,7 +29,7 @@ def classify_user_query(state: State) -> State:
     content = f"""
         Analyze this user message with conversation context:
         Message: {message.content}
-        Recent context: {conversation_history}
+        Recent context: {agent_result}
 
         Determine the message type based on the user's intent and the conversation context.
         Append RELEVANT CONVERSATION HISTORY to conversation_history. If NOT RELEVANT, return an empty string.

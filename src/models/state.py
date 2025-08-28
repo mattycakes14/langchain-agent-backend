@@ -9,6 +9,7 @@ class State(TypedDict):
     result: dict | None
     search_results: dict | None
     conversation_history: str | None
+    follow_up_services: str | None
 
 # Classify user query
 class MessageClassifier(BaseModel):
