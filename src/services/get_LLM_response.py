@@ -1,20 +1,14 @@
 from models.state import State
 import logging
 from config.settings import llm_main
+from config.settings import llm_personality
 from langchain_core.messages import SystemMessage
+
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
 def get_LLM_response(state: State) -> State:
     query = state["messages"][-1].content
-    search_results = state.get("search_results", {})
-    
-    # extract links from search results
-    if 'results' in search_results and search_results['results']:
-        links = [result["url"] for result in search_results['results']]
-    else:
-        links = []
 
-    logging.info("[SEARCHING THE WEB] Search results links: " + str(links))
     # retrieve content from previous nodes
     song_rec = state.get("result", {}).get("song_recommendation", {})
     concerts = state.get("result", {}).get("events", {})
@@ -49,11 +43,9 @@ def get_LLM_response(state: State) -> State:
         
         Here is the user query: """ + query + """
         Here is the output: """ + str(output) + """
-        
-        List the search results in a numbered list. """ + str(links) + """
         """
     try:
-        response = llm_main.invoke([
+        response = llm_personality.invoke([
             SystemMessage(content=system_prompt),
         ])
     except Exception as e:

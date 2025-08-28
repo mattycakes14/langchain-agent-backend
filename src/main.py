@@ -321,19 +321,24 @@ def handle_prompt(request: PromptRequest):
     user_query = request.prompt
     user_id = request.user_id
 
+    logging.info(f"User query: {user_query}")
     logging.info(f"State snapshot: {compiled_graph.get_state(config={'configurable': {'thread_id': user_id}})}")
     
-    if compiled_graph.get_state(config={'configurable': {'thread_id': user_id}}).next:
-        result = compiled_graph.invoke(
-            None,
-            config={"configurable": {"thread_id": user_id}},
-        )
-    else: 
-        result = compiled_graph.invoke(
-            {"messages": [HumanMessage(content=user_query)]},
-            config={"configurable": {"thread_id": user_id}},
-            interrupt_after=["song_rec"]
-        )
+    # if compiled_graph.get_state(config={'configurable': {'thread_id': user_id}}).next:
+    #     result = compiled_graph.invoke(
+    #         None,
+    #         config={"configurable": {"thread_id": user_id}},
+    #     )
+    # else: 
 
-        logging.info("[FINAL RESULT]: " + str(result))
+    # saves state snapshots of most recent node before stopping
+    result = compiled_graph.invoke(
+        {"messages": [HumanMessage(content=user_query)]},
+        config={"configurable": {"thread_id": user_id}},
+        interrupt_after=["smartrouter"]
+    )
+
+    response_with_follow_up = result.get("result", {}).get("smartrouter_result", "")
+    logging.info("[FINAL RESULT]: " + str(response_with_follow_up))
+
     return result

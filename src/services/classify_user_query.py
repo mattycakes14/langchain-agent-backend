@@ -9,8 +9,9 @@ from config.settings import llm_fast
 logging.basicConfig(level=logging.INFO)
 
 def classify_user_query(state: State) -> State:
-    message = state["messages"][0]
-
+    # get the last message
+    message = state["messages"][-1]
+    logging.info(f"[CLASSIFYING MESSAGE] latest message: {message}")
     # invoke LLM that only returns a structured output
     classifier_llm = llm_fast.with_structured_output(MessageClassifier)
     
@@ -29,6 +30,9 @@ def classify_user_query(state: State) -> State:
     - write_to_google_docs: The user is asking to write to a google doc.
     - search_reddit_forums: The user is asking to search the reddit forums.
     - post_to_reddit: The user is asking to post to the reddit forums.
+    - spotify_play_track: The user is asking to play a song on spotify.
+    - search_web: The user is asking to search the web.
+    - get_follow_up_services: The user is asking for follow up services.
     - default_llm_response: The user is asking a question that doesn't fit into any of the other categories.
     """
 

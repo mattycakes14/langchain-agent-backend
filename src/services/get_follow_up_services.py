@@ -28,7 +28,7 @@ def get_follow_up_services(state: State) -> State:
 
     The follow up services should be a list of services that make the most sense to help the user. (JUST RETURN THE LIST OF SERVICES, NO OTHER TEXT)
     """
-    result = llm_fast.invoke([
+    result = llm_main.invoke([
         SystemMessage(content=system_prompt)
     ])
     logging.info(f"[GET FOLLOW UP SERVICES] Follow up services: {result.content}")

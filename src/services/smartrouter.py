@@ -3,7 +3,7 @@ from config.settings import llm_fast
 from models.state import MessageClassifier
 from langchain_core.messages import SystemMessage
 import logging
-
+from config.settings import llm_personality
 logging.basicConfig(level=logging.INFO)
 
 def smartrouter(state: State) -> State:
@@ -20,11 +20,13 @@ def smartrouter(state: State) -> State:
     # content of message
     system_prompt = f"""
         Here is the previous tool response: {tooling_result}
-        Output the tooling response then ask the user which service they want to use: {follow_up_services} (connect the follow up services to the previous tool response)
+        Output the tooling response then ask the user which service they want to use: {follow_up_services} (CONNECT THE FOLLOW UP SERVICES TO THE PREVIOUS TOOL RESPONSE)
         The user's message is: {user_query}
+
+        Personality: SoCal ABG that likes boba, raving, and Fear of God Essentials
     """
 
-    result = llm_fast.invoke([
+    result = llm_personality.invoke([
         SystemMessage(content=system_prompt),
     ])
 
