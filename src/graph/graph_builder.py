@@ -51,37 +51,39 @@ graph.add_conditional_edges("classify_user_query",
 )
 graph.add_edge("classify_user_query", "get_follow_up_services")
 # All tools go to get_follow_up_services first, then smartrouter
-graph.add_edge("song_rec", "smartrouter")
+graph.add_edge("song_rec", "spotify_play_track")
+graph.add_edge("spotify_play_track", END)
 graph.add_edge("get_concerts", "smartrouter")
 graph.add_edge("get_weather", "smartrouter")
 graph.add_edge("yelp_search_activities", "smartrouter")
 graph.add_edge("create_calendar_event", "smartrouter")
 graph.add_edge("get_google_flights", "smartrouter")
 graph.add_edge("get_google_hotels", "smartrouter")
-graph.add_edge("default_llm_response", "smartrouter")
 graph.add_edge("write_to_google_docs", "smartrouter")
 graph.add_edge("search_reddit_forums", "smartrouter")
 graph.add_edge("spotify_play_track", "smartrouter")
 graph.add_edge("search_web", "smartrouter")
 graph.add_edge("get_follow_up_services", "smartrouter")
-graph.add_conditional_edges("smartrouter", 
-    lambda state: state.get("follow_up_services", "default_llm_response"),
-    {
-        "song_rec": "song_rec",
-        "get_concerts": "get_concerts",
-        "get_weather": "get_weather",
-        "yelp_search_activities": "yelp_search_activities",
-        "create_calendar_event": "create_calendar_event",
-        "get_google_flights": "get_google_flights",
-        "get_google_hotels": "get_google_hotels",
-        "default_llm_response": "default_llm_response",
-        "write_to_google_docs": "write_to_google_docs",
-        "search_reddit_forums": "search_reddit_forums",
-        "spotify_play_track": "spotify_play_track",
-        "search_web": "search_web"
-    }
-)
+
 graph.add_edge("smartrouter", "default_llm_response")
+# graph.add_conditional_edges("smartrouter", 
+#     lambda state: "spotify_play_track"
+#     {
+#         "song_rec": "song_rec",
+#         "get_concerts": "get_concerts",
+#         "get_weather": "get_weather",
+#         "yelp_search_activities": "yelp_search_activities",
+#         "create_calendar_event": "create_calendar_event",
+#         "get_google_flights": "get_google_flights",
+#         "get_google_hotels": "get_google_hotels",
+#         "default_llm_response": "default_llm_response",
+#         "write_to_google_docs": "write_to_google_docs",
+#         "search_reddit_forums": "search_reddit_forums",
+#         "spotify_play_track": "spotify_play_track",
+#         "search_web": "search_web"
+#     }
+# )
+# graph.add_edge("smartrouter", "default_llm_response")
 graph.add_edge("default_llm_response", END)
 # compile graph
 compiled_graph = graph.compile(
