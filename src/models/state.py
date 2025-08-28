@@ -5,7 +5,7 @@ from langgraph.graph import add_messages
 # State structure for each node
 class State(TypedDict):
     messages: Annotated[list, add_messages]
-    message_type: str | None
+    message_type: Annotated[str, "The type of message the user is sending"] | None
     result: dict | None
     extracted_params: dict | None  # Add this back
     search_results: dict | None

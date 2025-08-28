@@ -7,9 +7,11 @@ from graph.nodes import (
     spotify_play_track, write_to_google_docs, search_reddit_forums, 
     get_follow_up_services, smartrouter
 )
-from langgraph.checkpoint.memory import InMemorySaver
-# create memory saver
-memory_saver = InMemorySaver()
+from langgraph.checkpoint.redis import RedisSaver
+
+# Initialize Redis saver properly - need to enter the context manager
+_redis_checkpointer_ctx = RedisSaver.from_conn_string("redis://localhost:6379")
+_redis_checkpointer = _redis_checkpointer_ctx.__enter__()
 
 # create graph
 graph = StateGraph(State)
@@ -32,7 +34,7 @@ graph.add_node("get_follow_up_services", get_follow_up_services)
 graph.add_node("smartrouter", smartrouter)
 # add edges
 graph.add_edge(START, "classify_user_query")
-graph.add_conditional_edges("classify_user_query", 
+graph.add_conditional_edges("classify_user_query",
     lambda state: state.get("message_type", "default_llm_response"),
     {
         "song_rec": "song_rec",
@@ -68,7 +70,5 @@ graph.add_edge("get_follow_up_services", "smartrouter")
 graph.add_edge("smartrouter", "classify_user_query")
 graph.add_edge("default_llm_response", "classify_user_query")
 
-# compile graph
-compiled_graph = graph.compile(
-    checkpointer=memory_saver
-)
+# Compile graph with Redis checkpointer
+compiled_graph = graph.compile(checkpointer=_redis_checkpointer)

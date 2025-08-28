@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import os
 import requests
 from graph.graph_builder import compiled_graph
-from langgraph.checkpoint.memory import InMemorySaver
+
 from langchain_core.messages import HumanMessage
 import logging
 from arcadepy import Arcade
@@ -24,8 +24,7 @@ load_dotenv()
 # initialize FastAPI app
 app = FastAPI()
 
-# initialize memory saver
-checkpointer = InMemorySaver()
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -322,7 +321,11 @@ def handle_prompt(request: PromptRequest):
     user_id = request.user_id
 
     logging.info(f"User query: {user_query}")
-    logging.info(f"State snapshot: {compiled_graph.get_state(config={'configurable': {'thread_id': user_id}})}")
+    try:
+        state_info = compiled_graph.get_state(config={'configurable': {'thread_id': user_id}})
+        logging.info(f"State snapshot: {state_info}")
+    except Exception as e:
+        logging.info(f"Could not retrieve state: {e}")
     
     # if compiled_graph.get_state(config={'configurable': {'thread_id': user_id}}).next:
     #     result = compiled_graph.invoke(
@@ -341,4 +344,4 @@ def handle_prompt(request: PromptRequest):
     response_with_follow_up = result.get("result", {}).get("smartrouter_result", "")
     logging.info("[FINAL RESULT]: " + str(response_with_follow_up))
 
-    return result
+    return response_with_follow_up
