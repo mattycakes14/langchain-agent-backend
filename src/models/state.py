@@ -7,20 +7,14 @@ class State(TypedDict):
     messages: Annotated[list, add_messages]
     message_type: Annotated[str, "The type of message the user is sending"] | None
     result: dict | None
-    extracted_params: dict | None  # Add this back
     search_results: dict | None
     conversation_history: str | None
-
-# Define structured output for parameter extraction (API call query parameters)
-class ExtractedParams(BaseModel):
-    lat: Optional[float] = Field(description="Extracted latitude from the query", default=None)
-    lon: Optional[float] = Field(description="Extracted longitude from the query", default=None)
-    keyword: Optional[str] = Field(description="Extracted main keyword from the query", default=None)
 
 # Classify user query
 class MessageClassifier(BaseModel):
     message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights", "get_google_hotels", "write_to_google_docs", "search_reddit_forums", "spotify_play_track"] = Field(
         description="The type of message the user is sending")
+    conversation_history: str = Field(description="The conversation history of the user")
 
 # Calendar state model
 class CalendarState(BaseModel):

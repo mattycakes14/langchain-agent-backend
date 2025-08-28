@@ -70,6 +70,5 @@ graph.add_edge("get_follow_up_services", "smartrouter")
 graph.add_edge("default_llm_response", "smartrouter")
 graph.add_edge("smartrouter", END)
 
-
 # Compile graph with Redis checkpointer
 compiled_graph = graph.compile(checkpointer=_redis_checkpointer)
