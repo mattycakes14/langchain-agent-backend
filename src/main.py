@@ -327,18 +327,11 @@ def handle_prompt(request: PromptRequest):
     except Exception as e:
         logging.info(f"Could not retrieve state: {e}")
     
-    # if compiled_graph.get_state(config={'configurable': {'thread_id': user_id}}).next:
-    #     result = compiled_graph.invoke(
-    #         None,
-    #         config={"configurable": {"thread_id": user_id}},
-    #     )
-    # else: 
 
     # saves state snapshots of most recent node before stopping
     result = compiled_graph.invoke(
         {"messages": [HumanMessage(content=user_query)]},
         config={"configurable": {"thread_id": user_id}},
-        interrupt_after=["smartrouter"]
     )
 
     response_with_follow_up = result.get("result", {}).get("smartrouter_result", "")
