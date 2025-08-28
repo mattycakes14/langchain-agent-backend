@@ -31,7 +31,7 @@ index = pc.Index("socalabg")
 # State - The updated state with the song recommendation
 def search_songs(state: State) -> State:
     """Search for songs using vector similarity."""
-    query = state["messages"][0].content
+    query = state["messages"][-1].content
     try:
         # Get embedding for the query
         print(f"Getting embedding for query: '{query}'")

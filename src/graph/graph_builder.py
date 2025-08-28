@@ -64,11 +64,12 @@ graph.add_edge("get_google_flights", "smartrouter")
 graph.add_edge("get_google_hotels", "smartrouter")
 graph.add_edge("write_to_google_docs", "smartrouter")
 graph.add_edge("search_reddit_forums", "smartrouter")
-graph.add_edge("spotify_play_track", "smartrouter")
+graph.add_edge("spotify_play_track", END)
 graph.add_edge("search_web", "smartrouter")
 graph.add_edge("get_follow_up_services", "smartrouter")
+graph.add_edge("default_llm_response", "smartrouter")
 graph.add_edge("smartrouter", "classify_user_query")
-graph.add_edge("default_llm_response", "classify_user_query")
+
 
 # Compile graph with Redis checkpointer
 compiled_graph = graph.compile(checkpointer=_redis_checkpointer)

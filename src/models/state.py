@@ -9,6 +9,7 @@ class State(TypedDict):
     result: dict | None
     extracted_params: dict | None  # Add this back
     search_results: dict | None
+    conversation_history: str | None
 
 # Define structured output for parameter extraction (API call query parameters)
 class ExtractedParams(BaseModel):

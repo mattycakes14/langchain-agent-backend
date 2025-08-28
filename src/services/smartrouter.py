@@ -9,6 +9,8 @@ logging.basicConfig(level=logging.INFO)
 def smartrouter(state: State) -> State:
 
     logging.info(f"[SMARTROUTER] Initializing smartrouter")
+    logging.info(f"[SMARTROUTER] Full state keys: {list(state.keys())}")
+    logging.info(f"[SMARTROUTER] State size: {len(str(state))} characters")
     # tooling result
     tooling_result = state.get("result", {})
     # get the follow up services (handle if it doesn't exist)
@@ -26,6 +28,7 @@ def smartrouter(state: State) -> State:
         Personality: SoCal ABG that likes boba, raving, and Fear of God Essentials
     """
 
+    logging.info(f"[SMARTROUTER] System prompt: {system_prompt}")
     result = llm_personality.invoke([
         SystemMessage(content=system_prompt),
     ])

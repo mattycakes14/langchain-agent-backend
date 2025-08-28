@@ -1,9 +1,11 @@
-from models.state import State
+from models.state import State, SpotifyState
 import logging
 import os
 from dotenv import load_dotenv
 from arcadepy import Arcade
 from langchain_arcade import ArcadeToolManager
+from langchain_core.messages import SystemMessage, HumanMessage
+from config.settings import llm_fast
 from config.settings import user_id
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
@@ -20,10 +22,23 @@ client = Arcade(api_key=os.getenv("ARCADE_API_KEY"))
 # State - The updated state with the spotify response
 def spotify_play_track(state: State) -> State:
     """Play a track on Spotify"""
-    song_rec = state.get("result", {}).get("song_recommendation", {})
-    artists = song_rec.get("artists", "")
-    title = song_rec.get("title", "")
+    # get the conversation history
+    conversation_history = state.get("conversation_history", "")
 
+    llm_params = llm_fast.with_structured_output(SpotifyState)
+    prompt = f"""
+        Decide which song the user wants to play. The user's message is: {str(state["messages"][-1].content)}
+        with conversation history: {conversation_history}
+    """
+    # decide which song user wants to play
+    result = llm_params.invoke([SystemMessage(content=prompt)])
+
+    logging.info(f"[SPOTIFY PLAY TRACK] Result: {result}")
+    result = result.model_dump()
+    title = result.get("track_name", "")
+    artists = result.get("artist_name", "")
+
+    # convert the pydantic model to a dictionary
     logging.info("[SPOTIFY PLAY TRACK] Playing track: " + title + " by " + artists)
 
     tool_name = "Spotify.PlayTrackByName"
