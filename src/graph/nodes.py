@@ -9,6 +9,6 @@ from services.spotify_service import spotify_play_track
 from services.yelp_service import yelp_search_activities
 from services.get_LLM_response import get_LLM_response
 from services.get_follow_up_services import get_follow_up_services
-
+from services.smartrouter import smartrouter
 # Node functions for the graph
 # These are imported and used in graph_builder.py

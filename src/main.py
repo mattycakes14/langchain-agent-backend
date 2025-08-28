@@ -332,7 +332,7 @@ def handle_prompt(request: PromptRequest):
         result = compiled_graph.invoke(
             {"messages": [HumanMessage(content=user_query)]},
             config={"configurable": {"thread_id": user_id}},
-            interrupt_after=["song_rec"]
+            interrupt_after=["smartrouter"]
         )
 
         logging.info("[FINAL RESULT]: " + str(result))
