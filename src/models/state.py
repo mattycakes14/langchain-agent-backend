@@ -18,7 +18,7 @@ class MessageClassifier(BaseModel):
     conversation_history: str = Field(description="The conversation history of the user")
 
 # Yelp state model
-class YelpState(BaseModel):
+class LocationState(BaseModel):
     longitude: float = Field(description="The longitude of the location")
     latitude: float = Field(description="The latitude of the location")
 

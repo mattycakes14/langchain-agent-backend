@@ -3,6 +3,10 @@ import os
 import requests
 from dotenv import load_dotenv
 import logging
+from config.settings import llm_fast
+from models.state import LocationState
+from langchain_core.messages import SystemMessage
+
 # load environment variables
 load_dotenv()
 # Configure logging with more detail
@@ -15,18 +19,25 @@ logging.basicConfig(level=logging.INFO)
 def get_weather(state: State) -> State:
     """Get the weather for the user using extracted location parameters"""
     query = state["messages"][-1].content
-    extracted_params = state.get("extracted_params", {})
     
+    llm_params = llm_fast.with_structured_output(LocationState)
+    prompt = f"""
+        Fetch most accurate longitude and latitude of the location the user wants to search for weather. The user's message is: {str(state["messages"][-1].content)}
+    """
+    llm_result = llm_params.invoke([SystemMessage(content=prompt)])
+    llm_result = llm_result.model_dump()
+    longitude = llm_result.get("longitude", 0)
+    latitude = llm_result.get("latitude", 0)
 
-    #Query parameters
+    # Query parameters
     #lat: Latitude of the location (Float) REQUIRED
     #lon: Longitude of the location (Float) REQUIRED
     #appid: OpenWeatherMap API key (String) REQUIRED
     #units: Units to use for temperature (String) OPTIONAL
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {
-        "lat": extracted_params.get("lat", 34.0522),
-        "lon": extracted_params.get("lon", -118.2437),
+        "lat": latitude,
+        "lon": longitude,
         "appid": os.getenv("OPENWEATHERMAP_API_KEY"),
         "units": "imperial"
     }
@@ -43,7 +54,6 @@ def get_weather(state: State) -> State:
                 "result": {
                     "weather_data": weather_data,
                 },
-                "extracted_params": extracted_params
             }
         else:
             return {
@@ -52,7 +62,6 @@ def get_weather(state: State) -> State:
                 "result": {
                     "weather_data": "No weather data found"
                 },
-                "extracted_params": extracted_params
             }
             
     except Exception as e:
@@ -61,5 +70,4 @@ def get_weather(state: State) -> State:
             "messages": state["messages"],
             "message_type": state.get("message_type"),
             "result": {"error": f"Error getting weather: {str(e)}"},
-            "extracted_params": extracted_params
         }
