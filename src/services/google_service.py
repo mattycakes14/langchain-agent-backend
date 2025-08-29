@@ -25,19 +25,25 @@ def query_google_calendar(state: State) -> State:
     """Query the user's Google Calendar for events"""
     try:
         logging.info("[GOOGLE CALENDAR] Starting calendar event creation")
-        
+
+        user_query = state["messages"][-1].content
+        conversation_history = state.get("conversation_history", "")
+
         # Generate calendar event parameters using LLM
         generate_params = llm_fast.with_structured_output(CalendarState)
         
-        system_prompt = """Generate a calendar event for the user based on their query. 
+        system_prompt = f"""Generate a calendar event for the user based on their query. 
         Required fields: summary, start_datetime, end_datetime
         Optional fields: description, calendar_id, location (Don't use None for any fields, use empty string if needed)
         Use ISO 8601 format for dates (e.g., "2024-01-15T14:30:00Z")
-        If no specific time is mentioned, use reasonable defaults."""
+        If no specific time is mentioned, use reasonable defaults.
+
+        The user's message is: {user_query}
+        The conversation history is: {conversation_history}
+        """
         
         result = generate_params.invoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=state["messages"][-1].content)
+            SystemMessage(content=system_prompt)
         ])
         # convert pydantic class to dictionary
         if isinstance(result, BaseModel):
@@ -100,17 +106,22 @@ def query_google_calendar(state: State) -> State:
 # State - The updated state with the flight results
 def get_google_flights(state: State) -> State:
     """Get the best flights for the user using extracted location parameters"""
+    
     query = state["messages"][-1].content
+    conversation_history = state.get("conversation_history", "")
 
     generate_params = llm_fast.with_structured_output(FlightState)
-    system_prompt = """Fill in the flight parameters for the user's query. 
+    system_prompt = f"""Fill in the flight parameters for the user's query. 
     Required fields: departure_airport_code, arrival_airport_code, outbound_date
     Optional fields: num_adults, sort_by
     
     If user query doesn't provide enough information, use reasonable defaults.
     EVERYTHING MUST BE UPPERCASE
+
+    The user's message is: {query}
+    The conversation history is: {conversation_history}
     """
-    flight_params = generate_params.invoke([SystemMessage(content=system_prompt), HumanMessage(content=query)])
+    flight_params = generate_params.invoke([SystemMessage(content=system_prompt)])
 
     logging.info(f"[GOOGLE FLIGHTS] Generated FlightState: {flight_params.model_dump()}")
     converted_params = flight_params.model_dump()
@@ -174,16 +185,22 @@ def get_google_flights(state: State) -> State:
 # State - The updated state with the hotel results
 def get_google_hotels(state: State) -> State:
     """Get the best hotels for the user using extracted location parameters"""
+    
     query = state["messages"][-1].content
+    conversation_history = state.get("conversation_history", "")
+    
     generate_params = llm_fast.with_structured_output(HotelState)
-    system_prompt = """Fill in the hotel parameters for the user's query. 
+    system_prompt = f"""Fill in the hotel parameters for the user's query. 
     Required fields: location, check_in_date, check_out_date
     Optional fields: query, min_price, max_price, num_adults, sort_by
     If user query doesn't provide enough information, use reasonable defaults.
 
     EVERYTHING MUST BE UPPERCASE
+
+    The user's message is: {query}
+    The conversation history is: {conversation_history}
     """
-    hotel_params = generate_params.invoke([SystemMessage(content=system_prompt), HumanMessage(content=query)])
+    hotel_params = generate_params.invoke([SystemMessage(content=system_prompt)])
     tool_name = "GoogleHotels.SearchHotels"
     converted_params = hotel_params.model_dump()
 
@@ -273,8 +290,11 @@ def write_to_google_docs(state: State) -> State:
     """Write the user query to a google doc"""
     logging.info("[GOOGLE DOCS] Writing the user query to a google doc")
     
+    user_query = state["messages"][-1].content
+    conversation_history = state.get("conversation_history", "")
+    
     tool_name = "GoogleDocs.CreateDocumentFromText"
-    system_prompt = """You are a 21-year-old SoCal ABG bestie who's also a writing assistant. You help users create and edit documents in Google Docs with your signature playful, slangy, emoji-filled tone while being genuinely helpful.
+    system_prompt = f"""You are a 21-year-old SoCal ABG bestie who's also a writing assistant. You help users create and edit documents in Google Docs with your signature tone while being genuinely helpful.
         Your writing specialties include:
         - Travel itineraries and trip planning
         - Meeting notes and summaries
@@ -283,9 +303,13 @@ def write_to_google_docs(state: State) -> State:
         - Personal journaling and reflections
         - Work documents and presentations
         - Social media content and captions
-        """
+
+        The user's message is: {user_query}
+        The conversation history is: {conversation_history}
+    """
+
     params = llm_fast.with_structured_output(GoogleDocsState)
-    result = params.invoke([SystemMessage(content=system_prompt), HumanMessage(content=state["messages"][-1].content)])
+    result = params.invoke([SystemMessage(content=system_prompt)])
     result_dict = result.model_dump()
 
     tool_input = {

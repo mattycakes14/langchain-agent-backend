@@ -33,11 +33,11 @@ def classify_user_query(state: State) -> State:
         Recent context: {agent_result}
 
         Determine the message type based on the user's intent and the conversation context.
-        Append RELEVANT CONVERSATION HISTORY to conversation_history. If NOT RELEVANT, return an empty string.
+        Append RELEVANT CONVERSATION HISTORY to conversation_history. If NOT RELEVANT, RETURN EMPTY STRING.
     """
 
     llm_params = llm_fast.with_structured_output(MessageClassifier)
-    
+
     # Get the structured output
     result = llm_params.invoke([
         SystemMessage(content=content),
@@ -52,5 +52,5 @@ def classify_user_query(state: State) -> State:
     return {
         "messages": state["messages"],
         "message_type": result.get("message_type", "default_llm_response"),
-        "conversation_history": result.get("conversation_history", "")
+        "conversation_history": result.get("conversation_history", ""),
     }
