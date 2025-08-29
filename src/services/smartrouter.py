@@ -1,9 +1,9 @@
-from models.state import State
-from config.settings import llm_fast
-from models.state import MessageClassifier
+from src.models.state import State
+from src.config.settings import llm_fast
+from src.models.state import MessageClassifier
 from langchain_core.messages import SystemMessage
 import logging
-from config.settings import llm_personality
+from src.config.settings import llm_personality
 logging.basicConfig(level=logging.INFO)
 
 def smartrouter(state: State) -> State:

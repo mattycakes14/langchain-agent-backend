@@ -1,9 +1,9 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from models.state import MessageClassifier, State
-from services.get_conversation_history import get_conversation_window
+from src.models.state import MessageClassifier, State
+from src.services.get_conversation_history import get_conversation_window
 import logging
-from config.settings import llm_fast, llm_main
+from src.config.settings import llm_fast, llm_main
 import redis
 import json
 

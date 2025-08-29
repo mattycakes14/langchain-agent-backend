@@ -1,5 +1,5 @@
-from utils.embedding import get_embedding
-from models.state import State
+from src.utils.embedding import get_embedding
+from src.models.state import State
 import os
 from dotenv import load_dotenv
 import logging
@@ -7,7 +7,7 @@ from arcadepy import Arcade
 from langchain_arcade import ArcadeToolManager
 from pinecone import Pinecone
 import openai
-from config.settings import user_id
+from src.config.settings import user_id
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
 # load environment variables

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import os
 import requests
-from graph.graph_builder import compiled_graph
+from src.graph.graph_builder import compiled_graph
 
 from langchain_core.messages import HumanMessage
 import logging

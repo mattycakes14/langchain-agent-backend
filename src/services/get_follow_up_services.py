@@ -1,4 +1,4 @@
-from models.state import State
+from src.models.state import State
 import logging
 
 # Rule-based follow-up services mapping

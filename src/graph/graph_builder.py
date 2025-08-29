@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, START, END
-from models.state import State
-from graph.nodes import (
+from src.models.state import State
+from src.graph.nodes import (
     classify_user_query, search_songs, ticketmaster_search_event, 
     get_weather, get_LLM_response, yelp_search_activities, search_web,
     query_google_calendar, get_google_flights, get_google_hotels,
