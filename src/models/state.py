@@ -17,6 +17,11 @@ class MessageClassifier(BaseModel):
         description="The type of message the user is sending")
     conversation_history: str = Field(description="The conversation history of the user")
 
+# Yelp state model
+class YelpState(BaseModel):
+    longitude: float = Field(description="The longitude of the location")
+    latitude: float = Field(description="The latitude of the location")
+
 # Calendar state model
 class CalendarState(BaseModel):
     summary: str = Field(description="The summary of the event")

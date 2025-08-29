@@ -17,8 +17,9 @@ def classify_user_query(state: State) -> State:
 
     # get the conversation history
     conversation_history = get_conversation_window("matt1234")    
-    user_messages = conversation_history.get("user_messages", [])
-    agent_result = conversation_history.get("agent_result", "")
+    
+    user_messages = conversation_history.get("user_messages", []) if conversation_history else []
+    agent_result = conversation_history.get("agent_result", "") if conversation_history else ""
 
     logging.info(f"[Fetching conversation history] User messages: {user_messages}")
     logging.info(f"[Fetching conversation history] Agent result: {agent_result}")
@@ -36,6 +37,7 @@ def classify_user_query(state: State) -> State:
     """
 
     llm_params = llm_fast.with_structured_output(MessageClassifier)
+    
     # Get the structured output
     result = llm_params.invoke([
         SystemMessage(content=content),
