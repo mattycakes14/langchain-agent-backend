@@ -1,6 +1,5 @@
 from utils.embedding import get_embedding
 from models.state import State
-from langchain_community.vectorstores import Chroma
 import os
 from dotenv import load_dotenv
 import logging
