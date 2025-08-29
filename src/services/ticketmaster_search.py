@@ -2,8 +2,8 @@ from models.state import State
 import logging
 import os
 import requests
-from sentence_transformers import SentenceTransformer
-import faiss
+# from sentence_transformers import SentenceTransformer
+# import faiss
 from dotenv import load_dotenv
 from static_content.concert_filters import festival_to_description
 
@@ -22,29 +22,38 @@ def ticketmaster_search_event(state: State) -> State:
     logging.info("[SEARCHING FOR EVENTS] Searching for events")
     query = state["messages"][-1].content
     
-    # model to use for embedding
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-
-    # get description of genres
-    descriptions = list(festival_to_description.keys())
-
-    # embed descriptions
-    descriptions_embeddings = model.encode(descriptions)
-    # create faiss index
-    index = faiss.IndexFlatL2(descriptions_embeddings.shape[1])
-    index.add(descriptions_embeddings)
+    # Simple keyword matching for concert genres
+    def simple_genre_match(query_text: str) -> str:
+        query_lower = query_text.lower()
+        
+        # EDM/Electronic music keywords
+        genre_mappings = {
+            "edm": "Electronic",
+            "house": "House", 
+            "techno": "Techno",
+            "trance": "Trance",
+            "dubstep": "Dubstep",
+            "electronic": "Electronic",
+            "rave": "Electronic",
+            "festival": "Electronic",
+            "dance": "Electronic",
+            "dj": "Electronic",
+            "illenium": "Electronic",
+            "zedd": "Electronic", 
+            "blackpink": "Pop",
+            "kpop": "Pop",
+            "concert": "Electronic"  # Default to electronic for ABG vibe
+        }
+        
+        # Find best keyword match
+        for keyword, genre in genre_mappings.items():
+            if keyword in query_lower:
+                return genre
+                
+        # Default to Electronic for ABG persona
+        return "Electronic"
     
-    # get embedding for query
-    query_embedding = model.encode(query)
-    # reshape to 2D array for FAISS search
-    query_embedding = query_embedding.reshape(1, -1)
-    # search for nearest neighbors
-    distances, indices = index.search(query_embedding, 5)
-    # get closest description
-    closest_description = descriptions[indices[0][0]]
-
-    # get description of closest description
-    festival = festival_to_description[closest_description]
+    festival = simple_genre_match(query)
     
     logging.info("[BEST MATCH FESTIVAL] " + str(festival))
 

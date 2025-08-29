@@ -5,8 +5,8 @@ import requests
 from dotenv import load_dotenv
 from config.settings import llm_fast
 from static_content.descriptions_to_aliases import descriptions_to_aliases
-from sentence_transformers import SentenceTransformer
-import faiss
+# from sentence_transformers import SentenceTransformer
+# import faiss
 from langchain_core.messages import SystemMessage
 
 # load environment variables
@@ -30,27 +30,42 @@ def yelp_search_activities(state: State) -> State:
         LONGITUDE AND LATITUDE CAN ONLY BE NUMBERS
     """
 
-    # model to use for embedding
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    # Simple keyword matching instead of vector search
+    def simple_category_match(query_text: str) -> str:
+        query_lower = query_text.lower()
+        
+        # ABG favorites mapping
+        keyword_mappings = {
+            "boba": "bubbletea",
+            "bubble tea": "bubbletea", 
+            "milk tea": "bubbletea",
+            "taco": "tacos",
+            "mexican": "mexican",
+            "thai": "thai",
+            "croissant": "bakeries",
+            "coffee": "coffee",
+            "matcha": "bubbletea",
+            "food": "restaurants",
+            "eat": "restaurants",
+            "restaurant": "restaurants",
+            "drink": "bars",
+            "bar": "bars",
+            "shopping": "shopping",
+            "clothes": "shopping",
+            "vintage": "vintage"
+        }
+        
+        # Find best keyword match
+        for keyword, category in keyword_mappings.items():
+            if keyword in query_lower:
+                return category
+                
+        # Default fallback
+        return "restaurants"
+    
+    closest_alias = simple_category_match(query)
 
-    # embed descriptions
-    descriptions = list(descriptions_to_aliases.keys())
-    descriptions_embeddings = model.encode(descriptions)
-
-    # create FAISS index
-    index = faiss.IndexFlatL2(descriptions_embeddings.shape[1])
-    index.add(descriptions_embeddings)
-
-    # embed query
-    query_embedding = model.encode(query)
-    query_embedding = query_embedding.reshape(1, -1)
-    # search for the closest description
-    distances, indices = index.search(query_embedding, 1)
-    closest_description = descriptions[indices[0][0]]
-    closest_alias = descriptions_to_aliases[closest_description]
-
-    logging.info(f"[YELP SEARCH] Closest description: {closest_description}")
-    logging.info(f"[YELP SEARCH] Closest alias: {closest_alias}")
+    logging.info(f"[YELP SEARCH] Matched category: {closest_alias}")
 
     # decide the longitude and latitude of the location
     result = llm_params.invoke([SystemMessage(content=prompt)])
