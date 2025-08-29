@@ -9,9 +9,7 @@ from graph.nodes import (
 )
 from langgraph.checkpoint.redis import RedisSaver
 
-# Initialize Redis saver properly - need to enter the context manager
-_redis_checkpointer_ctx = RedisSaver.from_conn_string("redis://localhost:6379")
-_redis_checkpointer = _redis_checkpointer_ctx.__enter__()
+    
 
 # create graph
 graph = StateGraph(State)
@@ -71,4 +69,6 @@ graph.add_edge("default_llm_response", "smartrouter")
 graph.add_edge("smartrouter", END)
 
 # Compile graph with Redis checkpointer
-compiled_graph = graph.compile(checkpointer=_redis_checkpointer)
+# Initialize Redis saver properly - need to enter the context manager
+with RedisSaver.from_conn_string("redis://localhost:6379") as _redis_checkpointer:
+    compiled_graph = graph.compile(checkpointer=_redis_checkpointer)

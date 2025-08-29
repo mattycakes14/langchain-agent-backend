@@ -30,7 +30,8 @@ def spotify_play_track(state: State) -> State:
         Decide which song the user wants to play. The user's message is: {str(state["messages"][-1].content)}
         with conversation history: {conversation_history}
         
-        ARTIST CAN ONLY BE ONE NAME (NO AND, NO COMMA, NO SPACE)
+        ARTIST CAN ONLY BE ONE NAME (NO AND, NO COMMA)
+        ONLY SPACE BETWEEN FIRST AND LAST NAME
     """
     # decide which song user wants to play
     result = llm_params.invoke([SystemMessage(content=prompt)])
