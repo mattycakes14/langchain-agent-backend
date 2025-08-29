@@ -8,6 +8,7 @@ from graph.nodes import (
     get_follow_up_services, smartrouter
 )
 from langgraph.checkpoint.redis import RedisSaver
+import os
 
     
 
@@ -70,5 +71,7 @@ graph.add_edge("smartrouter", END)
 
 # Compile graph with Redis checkpointer
 # Initialize Redis saver properly - need to enter the context manager
-with RedisSaver.from_conn_string("redis://localhost:6379") as _redis_checkpointer:
+# Get Redis URL from environment (Railway sets this automatically)
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+with RedisSaver.from_conn_string(redis_url) as _redis_checkpointer:
     compiled_graph = graph.compile(checkpointer=_redis_checkpointer)

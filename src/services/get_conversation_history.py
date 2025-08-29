@@ -1,13 +1,16 @@
 import redis
 import json
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 
 def get_conversation_window(user_id: str) -> str:
     """Get recent conversation context from Redis"""
     try:
-        redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+        # Use Railway's Redis URL or fallback to localhost for development
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        redis_client = redis.from_url(redis_url, decode_responses=True)
         
         # Pattern to get all checkpoint (conversations) keys for a user
         pattern = f"checkpoint:{user_id}:__empty__:*"
