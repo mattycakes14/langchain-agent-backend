@@ -28,7 +28,7 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["http://localhost:3000",],  # Add DOMAIN later
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
@@ -330,7 +330,8 @@ def handle_prompt(request: PromptRequest):
 
     # saves state snapshots of most recent node before stopping
     result = compiled_graph.invoke(
-        {"messages": [HumanMessage(content=user_query)]},
+        {"messages": [HumanMessage(content=user_query)],
+         "user_id": user_id},
         config={"configurable": {"thread_id": user_id}},
     )
 

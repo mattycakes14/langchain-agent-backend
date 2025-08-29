@@ -10,7 +10,7 @@ class State(TypedDict):
     search_results: dict | None
     conversation_history: str | None
     follow_up_services: str | None
-
+    user_id: str | None
 # Classify user query
 class MessageClassifier(BaseModel):
     message_type: Literal["default_llm_response", "song_rec", "get_concerts", "get_weather", "yelp_search_activities", "create_calendar_event", "get_google_flights", "get_google_hotels", "write_to_google_docs", "search_reddit_forums", "spotify_play_track"] = Field(

@@ -15,8 +15,9 @@ def classify_user_query(state: State) -> State:
     message = state["messages"][-1]
     logging.info(f"[CLASSIFYING MESSAGE] latest message: {message}")
 
-    # get the conversation history
-    conversation_history = get_conversation_window("matt1234")    
+    # get the conversation history from the actual user 
+    user_id = state.get("user_id", "")
+    conversation_history = get_conversation_window(user_id)
     
     user_messages = conversation_history.get("user_messages", []) if conversation_history else []
     agent_result = conversation_history.get("agent_result", "") if conversation_history else ""

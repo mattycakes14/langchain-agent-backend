@@ -91,7 +91,6 @@ def ticketmaster_search_event(state: State) -> State:
         return {
             "messages": state["messages"],
             "message_type": state.get("message_type"),
-            "extracted_params": state.get("extracted_params"),
             "result": {
                 "events": filtered_events
             }

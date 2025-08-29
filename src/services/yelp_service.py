@@ -1,4 +1,4 @@
-from models.state import State, YelpState
+from models.state import State, LocationState
 import logging
 import os
 import requests
@@ -23,7 +23,7 @@ def yelp_search_activities(state: State) -> State:
     """Search for activities using Yelp API"""
     query = state["messages"][-1].content
 
-    llm_params = llm_fast.with_structured_output(YelpState)
+    llm_params = llm_fast.with_structured_output(LocationState)
     prompt = f"""
         Decide the longitude and latitude of the location the user wants to search for activities. The user's message is: {str(state["messages"][-1].content)}
         

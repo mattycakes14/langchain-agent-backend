@@ -18,6 +18,10 @@ logging.basicConfig(level=logging.INFO)
 # State - The updated state with the reddit forums results
 def search_reddit_forums(state: State) -> State:
     """Search the reddit forums for the user query"""
+
+    user_query = state["messages"][-1].content
+    conversation_history = state.get("conversation_history", "")
+    
     keyword_search = llm_main.invoke([SystemMessage(content="Extract main keyword from the user query for searching posts within subreddit."), HumanMessage(content=state["messages"][-1].content)])
     search = keyword_search.content
     try:
