@@ -71,27 +71,6 @@ graph.add_edge("default_llm_response", "smartrouter")
 graph.add_edge("smartrouter", END)
 
 # Compile graph with Redis if Redis Stack modules available; otherwise fall back to MemorySaver
-# Get Redis URL from environment (Railway sets this automatically)
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-
-def _redis_has_search_modules(redis_url_str: str) -> bool:
-    try:
-        client = Redis.from_url(redis_url_str)
-        try:
-            modules = client.execute_command("MODULE", "LIST")
-        except Exception:
-            # MODULE command may be disabled; assume missing
-            return False
-        serialized = str(modules).lower()
-        return ("search" in serialized) or ("searchlight" in serialized) or ("ft" in serialized)
-    except Exception:
-        return False
-
-if _redis_has_search_modules(redis_url):
-    with RedisSaver.from_conn_string(redis_url) as _redis_checkpointer:
-        compiled_graph = graph.compile(checkpointer=_redis_checkpointer)
-else:
-    raise RuntimeError(
-        "RedisSaver requires Redis Stack with search/searchlight module. "
-        "Provision a Redis Stack instance (e.g., Redis Enterprise Cloud) and set REDIS_URL."
-    )
+with RedisSaver.from_conn_string(redis_url) as _redis_checkpointer:
+    compiled_graph = graph.compile(checkpointer=_redis_checkpointer)
