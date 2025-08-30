@@ -1,5 +1,4 @@
 /venv
-/src/config
 __pycache__
 llm_agent.py
 .env
