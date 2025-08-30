@@ -8,7 +8,6 @@ from src.graph.nodes import (
     get_follow_up_services, smartrouter
 )
 from langgraph.checkpoint.redis import RedisSaver
-from langgraph.checkpoint.memory import MemorySaver
 import os
 from redis import Redis
 
@@ -92,5 +91,7 @@ if _redis_has_search_modules(redis_url):
     with RedisSaver.from_conn_string(redis_url) as _redis_checkpointer:
         compiled_graph = graph.compile(checkpointer=_redis_checkpointer)
 else:
-    memory_saver = MemorySaver()
-    compiled_graph = graph.compile(checkpointer=memory_saver)
+    raise RuntimeError(
+        "RedisSaver requires Redis Stack with search/searchlight module. "
+        "Provision a Redis Stack instance (e.g., Redis Enterprise Cloud) and set REDIS_URL."
+    )
