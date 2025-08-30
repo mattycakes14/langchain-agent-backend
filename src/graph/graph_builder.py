@@ -8,7 +8,9 @@ from src.graph.nodes import (
     get_follow_up_services, smartrouter
 )
 from langgraph.checkpoint.redis import RedisSaver
+from langgraph.checkpoint.memory import MemorySaver
 import os
+from redis import Redis
 
     
 
@@ -69,9 +71,26 @@ graph.add_edge("get_follow_up_services", "smartrouter")
 graph.add_edge("default_llm_response", "smartrouter")
 graph.add_edge("smartrouter", END)
 
-# Compile graph with Redis checkpointer
-# Initialize Redis saver properly - need to enter the context manager
+# Compile graph with Redis if Redis Stack modules available; otherwise fall back to MemorySaver
 # Get Redis URL from environment (Railway sets this automatically)
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-with RedisSaver.from_conn_string(redis_url) as _redis_checkpointer:
-    compiled_graph = graph.compile(checkpointer=_redis_checkpointer)
+
+def _redis_has_search_modules(redis_url_str: str) -> bool:
+    try:
+        client = Redis.from_url(redis_url_str)
+        try:
+            modules = client.execute_command("MODULE", "LIST")
+        except Exception:
+            # MODULE command may be disabled; assume missing
+            return False
+        serialized = str(modules).lower()
+        return ("search" in serialized) or ("searchlight" in serialized) or ("ft" in serialized)
+    except Exception:
+        return False
+
+if _redis_has_search_modules(redis_url):
+    with RedisSaver.from_conn_string(redis_url) as _redis_checkpointer:
+        compiled_graph = graph.compile(checkpointer=_redis_checkpointer)
+else:
+    memory_saver = MemorySaver()
+    compiled_graph = graph.compile(checkpointer=memory_saver)
