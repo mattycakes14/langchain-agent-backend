@@ -18,9 +18,26 @@ def classify_user_query(state: State) -> State:
     # get the conversation history from the actual user 
     user_id = state.get("user_id", "")
     conversation_history = get_conversation_window(user_id)
-    
-    user_messages = conversation_history.get("user_messages", []) if conversation_history else []
-    agent_result = conversation_history.get("agent_result", "") if conversation_history else ""
+
+    # Normalize conversation_history which may be dict, JSON string, plain string, or None
+    user_messages = []
+    agent_result = ""
+    try:
+        if isinstance(conversation_history, dict):
+            user_messages = conversation_history.get("user_messages", [])
+            agent_result = conversation_history.get("agent_result", "")
+        elif isinstance(conversation_history, str):
+            # Try decode JSON string; ignore if it's a plain message
+            try:
+                parsed = json.loads(conversation_history)
+                if isinstance(parsed, dict):
+                    user_messages = parsed.get("user_messages", [])
+                    agent_result = parsed.get("agent_result", "")
+            except Exception:
+                # Strings like "No conversation history" or "Error: ..." → keep defaults
+                pass
+    except Exception as e:
+        logging.warning(f"[Fetching conversation history] normalization error: {e}")
 
     logging.info(f"[Fetching conversation history] User messages: {user_messages}")
     logging.info(f"[Fetching conversation history] Agent result: {agent_result}")
