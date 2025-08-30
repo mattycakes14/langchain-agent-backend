@@ -1,12 +1,12 @@
-from models.state import State, SpotifyState
+from src.models.state import State, SpotifyState
 import logging
 import os
 from dotenv import load_dotenv
 from arcadepy import Arcade
 from langchain_arcade import ArcadeToolManager
 from langchain_core.messages import SystemMessage, HumanMessage
-from config.settings import llm_fast
-from config.settings import user_id
+from src.config.settings import llm_fast
+from src.config.settings import user_id
 # Configure logging with more detail
 logging.basicConfig(level=logging.INFO)
 # load environment variables

@@ -1,13 +1,13 @@
-from models.state import State
+from src.models.state import State
 import os
 import logging
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel
-from models.state import CalendarState, FlightState, HotelState, GoogleDocsState
+from src.models.state import CalendarState, FlightState, HotelState, GoogleDocsState
 from arcadepy import Arcade
 from langchain_arcade import ArcadeToolManager
-from config.settings import llm_fast, user_id
+from src.config.settings import llm_fast, user_id
 # load environment variables
 load_dotenv()
 

@@ -2,7 +2,7 @@ from langchain_openai import OpenAIEmbeddings
 import openai
 import os
 from dotenv import load_dotenv
-from config.settings import OPENAI_API_KEY
+from src.config.settings import OPENAI_API_KEY
 
 load_dotenv()
 

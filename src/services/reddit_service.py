@@ -1,9 +1,9 @@
-from models.state import State
+from src.models.state import State
 import logging
 import os
 import praw
 from dotenv import load_dotenv
-from config.settings import llm_main
+from src.config.settings import llm_main
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # load environment variables

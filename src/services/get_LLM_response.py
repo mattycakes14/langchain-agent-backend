@@ -1,7 +1,7 @@
-from models.state import State
+from src.models.state import State
 import logging
-from config.settings import llm_main
-from config.settings import llm_personality
+from src.config.settings import llm_main
+from src.config.settings import llm_personality
 from langchain_core.messages import SystemMessage
 
 # Configure logging with more detail

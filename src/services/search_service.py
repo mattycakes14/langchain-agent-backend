@@ -1,4 +1,4 @@
-from models.state import State
+from src.models.state import State
 import logging
 from dotenv import load_dotenv
 from tavily import TavilyClient

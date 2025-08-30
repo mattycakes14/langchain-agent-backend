@@ -1,10 +1,10 @@
-from models.state import State
+from src.models.state import State
 import os
 import requests
 from dotenv import load_dotenv
 import logging
-from config.settings import llm_fast
-from models.state import LocationState
+from src.config.settings import llm_fast
+from src.models.state import LocationState
 from langchain_core.messages import SystemMessage
 
 # load environment variables
