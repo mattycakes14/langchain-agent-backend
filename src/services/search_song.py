@@ -4,7 +4,6 @@ import os
 from dotenv import load_dotenv
 import logging
 from arcadepy import Arcade
-from langchain_arcade import ArcadeToolManager
 from pinecone import Pinecone
 import openai
 from src.config.settings import user_id
