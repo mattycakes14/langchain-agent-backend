@@ -6,7 +6,6 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel
 from src.models.state import CalendarState, FlightState, HotelState, GoogleDocsState
 from arcadepy import Arcade
-from langchain_arcade import ArcadeToolManager
 from src.config.settings import llm_fast, user_id
 # load environment variables
 load_dotenv()

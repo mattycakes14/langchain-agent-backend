@@ -3,7 +3,6 @@ import logging
 import os
 from dotenv import load_dotenv
 from arcadepy import Arcade
-from langchain_arcade import ArcadeToolManager
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.config.settings import llm_fast
 from src.config.settings import user_id
