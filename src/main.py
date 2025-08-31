@@ -55,6 +55,16 @@ class PromptRequest(BaseModel):
 def health_check():
     return {"message": "OK"}
 
+# GET /testRedisConnection
+@app.get("/testRedisConnection")
+def test_redis_connection():
+    try:
+        redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
+        redis_client.ping()
+        return {"message": "Redis connection successful"}
+    except Exception as e:
+        return {"error": str(e)}
+
 # POST /auth/userintegrations
 @app.post("/auth/userintegrations")
 def handle_auth(request: dict):
