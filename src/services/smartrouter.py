@@ -16,10 +16,11 @@ def smartrouter(state: State) -> State:
     follow_up_services = state.get("follow_up_services", "No follow-up services available")
 
     # get user query
-    user_query = state["messages"][0].content
+    user_query = state["messages"][-1].content
 
     # get ai response
-    prev_tool_content = (tooling_result.get("llm_response") or AIMessage(content="")).content
+    prev_tool_content = tooling_result.get("llm_response").content
+
     # content of message
     system_prompt = f"""
         Here is the previous tool response: {prev_tool_content}
