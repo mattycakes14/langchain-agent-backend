@@ -1,5 +1,0 @@
-[33m817027a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Removed FAISS + sentence transformers (TODO: Find alt to matching query w/ ticketmaster + yelp search)
-[33mf077add[m fixed syntax
-[33mb245d43[m removed CUDA verssions
-[33m01ded16[m Added back ML libs
-[33m4b9565a[m Removed heavy ML libs

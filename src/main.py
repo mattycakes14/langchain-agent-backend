@@ -13,6 +13,8 @@ from arcadepy import Arcade
 import supabase
 from langgraph.types import Command
 from langgraph.errors import GraphInterrupt
+import redis
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
