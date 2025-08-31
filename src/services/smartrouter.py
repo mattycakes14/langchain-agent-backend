@@ -18,12 +18,9 @@ def smartrouter(state: State) -> State:
     # get user query
     user_query = state["messages"][-1].content
 
-    # get ai response
-    prev_tool_content = tooling_result.get("llm_response")
-
     # content of message
     system_prompt = f"""
-        Here is the previous tool response: {prev_tool_content}
+        Here is the previous tool response: {tooling_result}
         Output the tooling response then ask the user which service they want to use: {follow_up_services} (CONNECT THE FOLLOW UP SERVICES TO THE PREVIOUS TOOL RESPONSE)
         The user's message is: {user_query}
 

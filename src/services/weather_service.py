@@ -24,7 +24,10 @@ def get_weather(state: State) -> State:
     prompt = f"""
         Fetch most accurate longitude and latitude of the location the user wants to search for weather. The user's message is: {str(state["messages"][-1].content)}
     """
+
     llm_result = llm_params.invoke([SystemMessage(content=prompt)])
+
+    logging.info(f"[GET WEATHER] LLM result: {llm_result}")
     llm_result = llm_result.model_dump()
     longitude = llm_result.get("longitude", 0)
     latitude = llm_result.get("latitude", 0)
@@ -45,6 +48,8 @@ def get_weather(state: State) -> State:
     try:
         response = requests.get(url, params=params)
         weather_data = response.json()
+        
+        logging.info(f"[GET WEATHER] Weather data: {weather_data}")
         
         # Check if the API call was successful
         if weather_data.get("cod") == 200:
