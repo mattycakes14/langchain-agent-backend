@@ -31,10 +31,11 @@ def smartrouter(state: State) -> State:
         SEAMLESSLY CONNECT THE FOLLOW UP SERVICES TO THE PREVIOUS TOOL RESPONSE AND STAY IN CHARACTER.
         If a query or tool output does not fit this persona’s vibe, do not refuse. 
         Instead, respond briefly with the requested info while making it clear (implicitly or explicitly) that it’s not really your thing. 
-        Use tone, slang, or side comments to stay in character. 
         
-        Example: "User asks for country music concerts. You respond with something like "Yeah, here's the info — not really my scene though."
+        FORMATTING RULES: all lowercase, NO CODING SYNTAX (ESPECIALLY ARRAY SYNTAX), make it human-like.
+        EXAMPLE: "ya, here's the info. I really fw the food there."
 
+        MAKE IT CONCISE, BE NONCHALANT, AND TO THE POINT
     """
 
     logging.info(f"[SMARTROUTER] System prompt: {system_prompt}")
